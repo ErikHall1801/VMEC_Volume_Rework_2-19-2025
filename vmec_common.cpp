@@ -9,19 +9,19 @@ namespace vmec
 //Metric Tensor Components
     realNumber metric_delta(const realNumber r)
     {
-        return (r*r) - (2.0*r) + (a*a);
+        return (r*r) - (2.0*r) + (settings.a*settings.a);
     }
 
 
     realNumber metric_sigma(const realNumber r, const realNumber theta)
     {
-        return (r*r) + (a*a) * (std::cos(theta) * std::cos(theta));
+        return (r*r) + (settings.a*settings.a) * (std::cos(theta) * std::cos(theta));
     }
 
 
     realNumber metric_lambda(const realNumber r, const realNumber theta)
     {
-        return (((r*r) + (a*a))*((r*r) + (a*a))) - (a*a * metric_delta(r) * (std::sin(theta)*std::sin(theta)));
+        return (((r*r) + (settings.a*settings.a))*((r*r) + (settings.a*settings.a))) - (settings.a*settings.a * metric_delta(r) * (std::sin(theta)*std::sin(theta)));
     }
 
 
@@ -33,7 +33,7 @@ namespace vmec
 
     realNumber metric_gPhi(const realNumber r, const realNumber theta)
     {
-        return -((2.0*a*r) / metric_sigma(r,theta)) * std::sin(theta)*std::sin(theta);
+        return -((2.0*settings.a*r) / metric_sigma(r,theta)) * std::sin(theta)*std::sin(theta);
     }
 
 
@@ -57,12 +57,12 @@ namespace vmec
 
     realNumber metric_gtPhi(const realNumber r, const realNumber theta)
     {
-        return -((2.0*a*r) / metric_sigma(r,theta)) * (std::sin(theta)*std::sin(theta));
+        return -((2.0*settings.a*r) / metric_sigma(r,theta)) * (std::sin(theta)*std::sin(theta));
     }
 
 
 //Ray-Disk Intersection
-bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &rayOrig, const Vector3 &rayDir, const realNumber &dx)
+bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &rayOrig, const Vector3 &rayDir, const realNumber &dx, Vector3 &hit)
 {
     realNumber denom = dotProduct(n,rayDir);
     Vector3 p010 = p0 - rayOrig;
@@ -72,8 +72,48 @@ bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &ray
         Vector3 p = rayOrig + rayDir * t; //Intersection point
         Vector3 v = p - p0;
         realNumber d2 = dotProduct(v,v);
-        return d2 <= CHECKER_DISK_MAJOR_RADIUS*CHECKER_DISK_MAJOR_RADIUS && d2 >= CHECKER_DISK_MINOR_RADIUS*CHECKER_DISK_MINOR_RADIUS;
+        hit = p;
+        return (d2 <= settings.checker_disk_major_radius*settings.checker_disk_major_radius && d2 >= settings.checker_disk_minor_radius*settings.checker_disk_minor_radius);
     }
+    return false;
+}
+
+
+//Ray-Sphere Intersection
+bool raySphereIntersection(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &pos, const realNumber &radius, const realNumber &dx)
+{
+    Vector3 L = pos - rayOrig;
+    realNumber tca = dotProduct(L,rayDir);
+    realNumber d2 = dotProduct(L,L) - tca*tca;
+    if(d2 > radius*radius) return false;
+    realNumber thc = std::sqrt((radius*radius) - d2);
+    realNumber t0 = 0.0, t1 = 0.0;
+    t0 = tca - thc;
+    t1 = tca + thc;
+    if(t0 > t1) std::swap(t0,t1);
+    if(t0 < 0.0)
+    {
+        t0 = t1;
+        if(t0 < 0.0) return false;
+    }
+
+    if(t0 > dx) return false;
+
+    //t0 is now the distance
+    return true;
+}
+
+
+//Step along ray for lattice points
+bool stepBetweenGeodesic(const int &max, const Vector3 &startPos, const Vector3 &dir, const Vector3 &targetPos, const realNumber &dx, const realNumber &minDist)
+{
+    realNumber d;
+    for(int i = 0; i < max; i++)
+    {
+        d = euclidianDistance(startPos + (dir*(dx/realNumber(max))*realNumber(i)),targetPos);
+        if(d < minDist) return true;
+    }
+
     return false;
 }
 
@@ -227,8 +267,8 @@ bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &ray
         Vector3 out;
         realNumber w, r, theta, phi;
 
-        w = (rayOrig.x*rayOrig.x + rayOrig.y*rayOrig.y + rayOrig.z*rayOrig.z) - a*a;
-        r = std::sqrt(0.5 * (w + std::sqrt(w*w + (4.0f*a*a*rayOrig.y*rayOrig.y))));
+        w = (rayOrig.x*rayOrig.x + rayOrig.y*rayOrig.y + rayOrig.z*rayOrig.z) - settings.a*settings.a;
+        r = std::sqrt(0.5 * (w + std::sqrt(w*w + (4.0f*settings.a*settings.a*rayOrig.y*rayOrig.y))));
         theta = std::acos(rayOrig.y / r);
         phi = std::atan2(rayOrig.z,rayOrig.x);
 
@@ -241,9 +281,9 @@ bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &ray
     Vector3 BoyerLindquistToCartesian(const realNumber r, const realNumber theta, const realNumber phi)
     {
         Vector3 out;
-        out.x = std::sqrt((r*r) + (a*a)) * std::sin(theta) * std::cos(phi); //X
+        out.x = std::sqrt((r*r) + (settings.a*settings.a)) * std::sin(theta) * std::cos(phi); //X
         out.y = r*std::cos(theta); //Y
-        out.z = std::sqrt((r*r) + (a*a)) * std::sin(theta) * std::sin(phi); //Z
+        out.z = std::sqrt((r*r) + (settings.a*settings.a)) * std::sin(theta) * std::sin(phi); //Z
         return out;
     }
 
@@ -373,7 +413,7 @@ RayProperties initializeRay(const Vector3& rayOrig, const Vector3& rayDir, const
 void pointInBounds(BVObjects& BoundingVolumes, const realNumber& r, const realNumber& theta)
 {
     //Accretion disk Case
-    if(std::sqrt(r*r + a*a)*std::sin(theta) < BV_DISK_MAJOR_RADIUS && std::sqrt(r*r + a*a)*std::sin(theta) > BV_DISK_MINOR_RADIUS && std::abs(r*std::cos(theta)) < std::tan(BV_DISK_MEAN_SLOPE * (M_PI/180.0))*(r+BV_DISK_RADIUS_OFFSET) && BV_DISK_TOGGLE)
+    if(settings.bv_disk_toggle && std::sqrt(r*r + settings.a*settings.a)*std::sin(theta) < settings.bv_disk_major_radius && std::sqrt(r*r + settings.a*settings.a)*std::sin(theta) > settings.bv_disk_minor_radius && std::abs(r*std::cos(theta)) < std::tan(settings.bv_disk_mean_slope * (M_PI/180.0))*(r+settings.bv_disk_radius_offset))
     {
         BoundingVolumes.disk = true;
     }
@@ -383,7 +423,7 @@ void pointInBounds(BVObjects& BoundingVolumes, const realNumber& r, const realNu
     }
 
     //Astrophysical Jet case
-    if(std::abs(r*std::cos(theta)) < BV_JET_HEIGHT && sqrt(r*r + a*a)*std::sin(theta)-BV_JET_MINOR_RADIUS < std::abs(r*std::cos(theta))*std::tan(BV_JET_DEFLECTION*(M_PI/180.0)) && BV_JET_TOGGLE)
+    if(settings.bv_jet_toggle && std::abs(r*std::cos(theta)) < settings.bv_jet_height && sqrt(r*r + settings.a*settings.a)*std::sin(theta)-settings.bv_jet_minor_radius < std::abs(r*std::cos(theta))*std::tan(settings.bv_jet_deflection*(M_PI/180.0)))
     {
         BoundingVolumes.jet = true;
     }
@@ -393,7 +433,7 @@ void pointInBounds(BVObjects& BoundingVolumes, const realNumber& r, const realNu
     }
 
     //Ambient Medium case
-    if(r < BV_AMBIENT_MEDIUM_RADIUS && BV_AMBIENT_MEDIUM_TOGGLE)
+    if(settings.bv_ambient_medium_toggle && r < settings.bv_ambient_medium_radius)
     {
         BoundingVolumes.ambient = true;
     }
@@ -417,12 +457,12 @@ static RayProperties rayDerivatives(const RayProperties& incomingValues)
     realNumber u1 = incomingValues.u1;
     realNumber u2 = incomingValues.u2;
     realNumber u3 = incomingValues.u3;
-    realNumber r2 = r*r, r3 = r2*r, r4 = r2*r2, a2 = a*a, a3 = a2*a, a4 = a2*a2, cosTheta = std::cos(theta), sinTheta = std::sin(theta), cosTheta2 = cosTheta*cosTheta, sinTheta2 = sinTheta*sinTheta, sinTheta3 = sinTheta2*sinTheta, s = (a2*cosTheta2+r2), s2 = s*s;
+    realNumber r2 = r*r, r3 = r2*r, r4 = r2*r2, a2 = settings.a*settings.a, a3 = a2*settings.a, a4 = a2*a2, cosTheta = std::cos(theta), sinTheta = std::sin(theta), cosTheta2 = cosTheta*cosTheta, sinTheta2 = sinTheta*sinTheta, sinTheta3 = sinTheta2*sinTheta, s = (a2*cosTheta2+r2), s2 = s*s;
 
-    u0Dot = -2.0*u0*u1*(-a*r*(4.0*a*r2*sinTheta2/s2 - 2.0*a*sinTheta2/s)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(-4.0*r2/s2 + 2.0/s)*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - 2.0*u0*u2*(2.0*a2*r*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)*sinTheta*cosTheta/(s2*(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - a*r*(-4.0*a3*r*sinTheta3*cosTheta/s2 - 4.0*a*r*sinTheta*cosTheta/s)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - 2.0*u1*u3*(-a*r*(-4.0*a2*r2*sinTheta2/s2 + 2.0*a2*sinTheta2/s + 2.0*r)*sinTheta2/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(4.0*a*r2*sinTheta2/s2 - 2.0*a*sinTheta2/s)*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - 2.0*u2*u3*(-a*r*((4.0*a4*r*sinTheta3*cosTheta/s2 + 4.0*a2*r*sinTheta*cosTheta/s)*sinTheta2 + 2.0*(2.0*a2*r*sinTheta2/s + a2 + r2)*sinTheta*cosTheta)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(-4.0*a3*r*sinTheta3*cosTheta/s2 -4.0*a*r*sinTheta*cosTheta/s)*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4));
-    u1Dot = 2.0*a2*u1*u2*sinTheta*cosTheta/s + r*u2*u2*(-2.0*r + a2 + r2)/s - 0.5*u0*u0*(4.0*r2/s2 - 2.0/s)*(-2.0*r + a2 + r2)/s -u0*u3*(-4.0*a*r2*sinTheta2/s2 + 2.0*a*sinTheta2/s)*(-2.0*r + a2 + r2)/s - 0.5*u1*u1*(2.0*r/(-2.0*r + a2 + r2) + (2.0 - 2.0*r)*s/((-2.0*r + a2 + r2)*(-2.0*r + a2 + r2)))*(-2.0*r + a2 + r2)/s + 0.5*u3*u3*(-2.0*r + a2 + r2)*(-4.0*a2*r2*sinTheta2/s2 + 2.0*a2*sinTheta2/s + 2.0*r)*sinTheta2/s;
-    u2Dot = 2.0*a2*r*u0*u0*sinTheta*cosTheta/(s2*s) - a2*u1*u1*sinTheta*cosTheta/((s)*(-2.0*r + a2 + r2)) + a2*u2*u2*sinTheta*cosTheta/(s) - 2.0*r*u1*u2/(s) -u0*u3*(4.0*a3*r*sinTheta3*cosTheta/s2 + 4.0*a*r*sinTheta*cosTheta/(s))/(s) - 0.5*u3*u3*(-(4.0*a4*r*sinTheta3*cosTheta/s2 + 4.0*a2*r*sinTheta*cosTheta/(s))*sinTheta2 - 2.0*(2.0*a2*r*sinTheta2/(s) + a2 + r2)*sinTheta*cosTheta)/(s);
-    u3Dot = -2.0*u0*u1*(-a*r*(-4.0*r2/s2 + 2.0/(s))/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(4.0*a*r2*sinTheta2/s2 - 2.0*a*sinTheta2/(s))*(-2.0*r + s)/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2)) - 2.0*u0*u2*(-4.0*a3*r2*sinTheta*cosTheta/(s2*(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) + 0.5*(-4.0*a3*r*sinTheta3*cosTheta/s2 - 4.0*a*r*sinTheta*cosTheta/(s))*(-2.0*r + s)/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2)) - 2.0*u1*u3*(-a*r*(4.0*a*r2*sinTheta2/s2 - 2.0*a*sinTheta2/(s))/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(-2.0*r + s)*(-4.0*a2*r2*sinTheta2/s2 + 2.0*a2*sinTheta2/(s) + 2.0*r)*sinTheta2/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2)) - 2.0*u2*u3*(-a*r*(-4.0*a3*r*sinTheta3*cosTheta/s2 - 4.0*a*r*sinTheta*cosTheta/(s))/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*((4.0*a4*r*sinTheta3*cosTheta/s2 + 4.0*a2*r*sinTheta*cosTheta/(s))*sinTheta2 + 2.0*(2.0*a2*r*sinTheta2/(s) + a2 + r2)*sinTheta*cosTheta)*(-2.0*r + s)/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2));
+    u0Dot = -2.0*u0*u1*(-settings.a*r*(4.0*settings.a*r2*sinTheta2/s2 - 2.0*settings.a*sinTheta2/s)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(-4.0*r2/s2 + 2.0/s)*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - 2.0*u0*u2*(2.0*a2*r*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)*sinTheta*cosTheta/(s2*(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - settings.a*r*(-4.0*a3*r*sinTheta3*cosTheta/s2 - 4.0*settings.a*r*sinTheta*cosTheta/s)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - 2.0*u1*u3*(-settings.a*r*(-4.0*a2*r2*sinTheta2/s2 + 2.0*a2*sinTheta2/s + 2.0*r)*sinTheta2/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(4.0*settings.a*r2*sinTheta2/s2 - 2.0*settings.a*sinTheta2/s)*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) - 2.0*u2*u3*(-settings.a*r*((4.0*a4*r*sinTheta3*cosTheta/s2 + 4.0*a2*r*sinTheta*cosTheta/s)*sinTheta2 + 2.0*(2.0*a2*r*sinTheta2/s + a2 + r2)*sinTheta*cosTheta)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(-4.0*a3*r*sinTheta3*cosTheta/s2 -4.0*settings.a*r*sinTheta*cosTheta/s)*(-2.0*a2*r*sinTheta2 - a4*cosTheta2 - a2*r2*cosTheta2 - a2*r2 - r4)/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4));
+    u1Dot = 2.0*a2*u1*u2*sinTheta*cosTheta/s + r*u2*u2*(-2.0*r + a2 + r2)/s - 0.5*u0*u0*(4.0*r2/s2 - 2.0/s)*(-2.0*r + a2 + r2)/s -u0*u3*(-4.0*settings.a*r2*sinTheta2/s2 + 2.0*settings.a*sinTheta2/s)*(-2.0*r + a2 + r2)/s - 0.5*u1*u1*(2.0*r/(-2.0*r + a2 + r2) + (2.0 - 2.0*r)*s/((-2.0*r + a2 + r2)*(-2.0*r + a2 + r2)))*(-2.0*r + a2 + r2)/s + 0.5*u3*u3*(-2.0*r + a2 + r2)*(-4.0*a2*r2*sinTheta2/s2 + 2.0*a2*sinTheta2/s + 2.0*r)*sinTheta2/s;
+    u2Dot = 2.0*a2*r*u0*u0*sinTheta*cosTheta/(s2*s) - a2*u1*u1*sinTheta*cosTheta/((s)*(-2.0*r + a2 + r2)) + a2*u2*u2*sinTheta*cosTheta/(s) - 2.0*r*u1*u2/(s) -u0*u3*(4.0*a3*r*sinTheta3*cosTheta/s2 + 4.0*settings.a*r*sinTheta*cosTheta/(s))/(s) - 0.5*u3*u3*(-(4.0*a4*r*sinTheta3*cosTheta/s2 + 4.0*a2*r*sinTheta*cosTheta/(s))*sinTheta2 - 2.0*(2.0*a2*r*sinTheta2/(s) + a2 + r2)*sinTheta*cosTheta)/(s);
+    u3Dot = -2.0*u0*u1*(-settings.a*r*(-4.0*r2/s2 + 2.0/(s))/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(4.0*settings.a*r2*sinTheta2/s2 - 2.0*settings.a*sinTheta2/(s))*(-2.0*r + s)/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2)) - 2.0*u0*u2*(-4.0*a3*r2*sinTheta*cosTheta/(s2*(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4)) + 0.5*(-4.0*a3*r*sinTheta3*cosTheta/s2 - 4.0*settings.a*r*sinTheta*cosTheta/(s))*(-2.0*r + s)/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2)) - 2.0*u1*u3*(-settings.a*r*(4.0*settings.a*r2*sinTheta2/s2 - 2.0*settings.a*sinTheta2/(s))/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*(-2.0*r + s)*(-4.0*a2*r2*sinTheta2/s2 + 2.0*a2*sinTheta2/(s) + 2.0*r)*sinTheta2/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2)) - 2.0*u2*u3*(-settings.a*r*(-4.0*a3*r*sinTheta3*cosTheta/s2 - 4.0*settings.a*r*sinTheta*cosTheta/(s))/(2.0*a2*r*sinTheta2 - 2.0*a2*r - 2.0*r3 + a4*cosTheta2 + a2*r2*cosTheta2 + a2*r2 + r4) + 0.5*((4.0*a4*r*sinTheta3*cosTheta/s2 + 4.0*a2*r*sinTheta*cosTheta/(s))*sinTheta2 + 2.0*(2.0*a2*r*sinTheta2/(s) + a2 + r2)*sinTheta*cosTheta)*(-2.0*r + s)/(2.0*a2*r*sinTheta2*sinTheta2 - 2.0*a2*r*sinTheta2 - 2.0*r3*sinTheta2 + a4*sinTheta2*cosTheta2 + a2*r2*sinTheta2*cosTheta2 + a2*r2*sinTheta2 + r4*sinTheta2));
 
     outgoingFunction.t = u0;
     outgoingFunction.r = u1;
@@ -457,13 +497,13 @@ Vector4 restframeToZAMO(const Vector3& rayDir, const localProperties& cameraProp
     ut = std::sqrt((deltaCamera*sigmaCamera) / Lambda) * u0Camera;
     ur = std::sqrt(sigmaCamera / deltaCamera) * u1Camera;
     uTheta = std::sqrt(sigmaCamera) * u2Camera;
-    uPhi = (std::sin(thetaCamera) * std::sqrt(Lambda / sigmaCamera) * u3Camera) - (((2.0*a*rCamera*std::sin(thetaCamera)) / std::sqrt(Lambda*sigmaCamera)) * u0Camera);
+    uPhi = (std::sin(thetaCamera) * std::sqrt(Lambda / sigmaCamera) * u3Camera) - (((2.0*settings.a*rCamera*std::sin(thetaCamera)) / std::sqrt(Lambda*sigmaCamera)) * u0Camera);
     vr = ur / ut;
     vTheta = uTheta / ut;
     vPhi = uPhi / ut;
-    vX = (1.0 / std::sqrt((rCamera*rCamera) + (a*a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( ((rCamera*std::sin(thetaCamera)*std::cos(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (a*a))*std::cos(thetaCamera)*std::cos(phiCamera)*vTheta)) ) - (std::sin(phiCamera)*vPhi);
-    vY = (1.0 / std::sqrt((rCamera*rCamera) + (a*a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (std::sqrt((rCamera*rCamera) + (a*a)) * std::cos(thetaCamera) * vr) - (rCamera*std::sin(thetaCamera)*vTheta) );
-    vZ = (1.0 / std::sqrt((rCamera*rCamera) + (a*a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (rCamera*std::sin(thetaCamera)*std::sin(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (a*a)) * std::cos(thetaCamera)*std::sin(phiCamera)*vTheta) ) + (std::cos(phiCamera)*vPhi);
+    vX = (1.0 / std::sqrt((rCamera*rCamera) + (settings.a*settings.a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( ((rCamera*std::sin(thetaCamera)*std::cos(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (settings.a*settings.a))*std::cos(thetaCamera)*std::cos(phiCamera)*vTheta)) ) - (std::sin(phiCamera)*vPhi);
+    vY = (1.0 / std::sqrt((rCamera*rCamera) + (settings.a*settings.a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (std::sqrt((rCamera*rCamera) + (settings.a*settings.a)) * std::cos(thetaCamera) * vr) - (rCamera*std::sin(thetaCamera)*vTheta) );
+    vZ = (1.0 / std::sqrt((rCamera*rCamera) + (settings.a*settings.a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (rCamera*std::sin(thetaCamera)*std::sin(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (settings.a*settings.a)) * std::cos(thetaCamera)*std::sin(phiCamera)*vTheta) ) + (std::cos(phiCamera)*vPhi);
     v2 = vX*vX + vY*vY + vZ*vZ;
 
     gamma = 1.0 / std::sqrt(1.0-v2);
@@ -515,13 +555,13 @@ realNumber localZAMOVelocity(const localProperties& positionProperties)
     ut = std::sqrt((deltaCamera*sigmaCamera) / Lambda) * u0Camera;
     ur = std::sqrt(sigmaCamera / deltaCamera) * u1Camera;
     uTheta = std::sqrt(sigmaCamera) * u2Camera;
-    uPhi = (std::sin(thetaCamera) * std::sqrt(Lambda / sigmaCamera) * u3Camera) - (((2.0*a*rCamera*std::sin(thetaCamera)) / std::sqrt(Lambda*sigmaCamera)) * u0Camera);
+    uPhi = (std::sin(thetaCamera) * std::sqrt(Lambda / sigmaCamera) * u3Camera) - (((2.0*settings.a*rCamera*std::sin(thetaCamera)) / std::sqrt(Lambda*sigmaCamera)) * u0Camera);
     vr = ur / ut;
     vTheta = uTheta / ut;
     vPhi = uPhi / ut;
-    vX = (1.0 / std::sqrt((rCamera*rCamera) + (a*a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( ((rCamera*std::sin(thetaCamera)*std::cos(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (a*a))*std::cos(thetaCamera)*std::cos(phiCamera)*vTheta)) ) - (std::sin(phiCamera)*vPhi);
-    vY = (1.0 / std::sqrt((rCamera*rCamera) + (a*a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (std::sqrt((rCamera*rCamera) + (a*a)) * std::cos(thetaCamera) * vr) - (rCamera*std::sin(thetaCamera)*vTheta) );
-    vZ = (1.0 / std::sqrt((rCamera*rCamera) + (a*a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (rCamera*std::sin(thetaCamera)*std::sin(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (a*a)) * std::cos(thetaCamera)*std::sin(phiCamera)*vTheta) ) + (std::cos(phiCamera)*vPhi);
+    vX = (1.0 / std::sqrt((rCamera*rCamera) + (settings.a*settings.a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( ((rCamera*std::sin(thetaCamera)*std::cos(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (settings.a*settings.a))*std::cos(thetaCamera)*std::cos(phiCamera)*vTheta)) ) - (std::sin(phiCamera)*vPhi);
+    vY = (1.0 / std::sqrt((rCamera*rCamera) + (settings.a*settings.a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (std::sqrt((rCamera*rCamera) + (settings.a*settings.a)) * std::cos(thetaCamera) * vr) - (rCamera*std::sin(thetaCamera)*vTheta) );
+    vZ = (1.0 / std::sqrt((rCamera*rCamera) + (settings.a*settings.a) * (std::cos(thetaCamera)*std::cos(thetaCamera)))) * ( (rCamera*std::sin(thetaCamera)*std::sin(phiCamera)*vr) + (std::sqrt((rCamera*rCamera) + (settings.a*settings.a)) * std::cos(thetaCamera)*std::sin(phiCamera)*vTheta) ) + (std::cos(phiCamera)*vPhi);
     v2 = vX*vX + vY*vY + vZ*vZ;
     return (v2);
 }
@@ -533,15 +573,15 @@ Vector4 ZAMOToGlobal(const Vector4& rayDir4, realNumber r, realNumber theta, rea
     Vector4 uOut;
     realNumber rayr, raytheta, rayphi, rayt, Lambda, u0, u1, u2, u3;
 
-    rayr = (1.0 / std::sqrt((r*r) + (a*a) * (std::cos(theta)*std::cos(theta)))) * ((r*std::sin(theta)*std::cos(phi)*rayDir4.x) + (r*std::sin(theta)*std::sin(phi)*rayDir4.z) + (std::sqrt((r*r) + (a*a)) * std::cos(theta) * rayDir4.y));
-    raytheta = (1.0 / std::sqrt((r*r) + (a*a) * (std::cos(theta)*std::cos(theta)))) * ( (std::sqrt((r*r) + (a*a)) * std::cos(theta) * std::cos(phi) * rayDir4.x) + (std::sqrt((r*r) + (a*a)) * std::cos(theta) * std::sin(phi) * rayDir4.z) - (r*std::sin(theta)*rayDir4.y) );
+    rayr = (1.0 / std::sqrt((r*r) + (settings.a*settings.a) * (std::cos(theta)*std::cos(theta)))) * ((r*std::sin(theta)*std::cos(phi)*rayDir4.x) + (r*std::sin(theta)*std::sin(phi)*rayDir4.z) + (std::sqrt((r*r) + (settings.a*settings.a)) * std::cos(theta) * rayDir4.y));
+    raytheta = (1.0 / std::sqrt((r*r) + (settings.a*settings.a) * (std::cos(theta)*std::cos(theta)))) * ( (std::sqrt((r*r) + (settings.a*settings.a)) * std::cos(theta) * std::cos(phi) * rayDir4.x) + (std::sqrt((r*r) + (settings.a*settings.a)) * std::cos(theta) * std::sin(phi) * rayDir4.z) - (r*std::sin(theta)*rayDir4.y) );
     rayphi = (-std::sin(phi) * rayDir4.x) + (std::cos(phi) * rayDir4.z);
     rayt = rayDir4.t;
     Lambda = metric_lambda(r,theta);
     u0 = std::sqrt( Lambda / (delta*sigma) ) * rayt;
     u1 = std::sqrt( delta / sigma ) * rayr;
     u2 = (1.0 / std::sqrt(sigma)) * raytheta;
-    u3 = 2.0*a*r/std::sqrt(Lambda*delta*sigma)*rayt + std::sqrt(sigma/Lambda)/std::sin(theta)*rayphi;
+    u3 = 2.0*settings.a*r/std::sqrt(Lambda*delta*sigma)*rayt + std::sqrt(sigma/Lambda)/std::sin(theta)*rayphi;
 
     uOut.x = u0;
     uOut.y = u1;
@@ -578,7 +618,7 @@ realNumber deriveu0(realNumber u1, realNumber u2, realNumber u3, realNumber r, r
 
 
 //Runge Kutta-Fehlberg Scheme
-RayProperties rayRKF45(const RayProperties& incomingValues, const BVObjects BV, realNumber Medium)
+RayProperties rayRKF45(const RayProperties& incomingValues)
 {
     realNumber rateOfChange, rateOfChangeC, minStep, hU, absError = 1e10, tol = 1e-5, newhV = 0.0, newhC = 0.0, newh = 0.0, ts = 0.1;
     RayProperties newy, error, k1, k2, k3, k4, k5, k6;
@@ -598,14 +638,7 @@ RayProperties rayRKF45(const RayProperties& incomingValues, const BVObjects BV, 
         error = (-1.0/360.0)*k1*hU + (128.0/4275.0)*k3*hU + (2197.0/75240.0)*k4*hU - (1.0/50.0)*k5*hU - (2.0/55.0)*k6*hU;
         absError = std::sqrt((error.t*error.t) + (error.r*error.r) + (error.theta*error.theta) + (error.phi*error.phi) + (error.u0*error.u0) + (error.u1*error.u1) + (error.u2*error.u2) + (error.u3*error.u3) + (error.hStep*error.hStep));
 
-        if(BV.disk || BV.jet)
-        {
-            ts = lerp(0.9,0.05,Medium); //0.05
-        }
-
-        newhV = ts*hU*std::pow((tol/absError),(1.0/5.0));
-        newhC = 0.9*hU*std::pow((tol/absError),(1.0/5.0));
-        newh = std::min(newhV,newhC);
+        newh = 0.9*hU*std::pow((tol/absError),(1.0/5.0));
 
         if(absError > tol)
         {
@@ -711,7 +744,7 @@ realNumber generalizedTimeDilationFactor(realNumber r, realNumber theta, const V
 //Disk Velocity function
 realNumber uPhi(realNumber r)
 {
-    return -(sign(a)*std::sqrt(r) / (r * std::sqrt( (r*r) - (3.0*r) + (2.0*std::abs(a)*std::sqrt(r))))) * DISK_LATTICE_VELOCITY_SCALE;
+    return -(sign(settings.a)*std::sqrt(r) / (r * std::sqrt( (r*r) - (3.0*r) + (2.0*std::abs(settings.a)*std::sqrt(r))))) * settings.disk_lattice_velocity_scale;
 }
 
 
@@ -721,20 +754,20 @@ Vector3 uATJ(realNumber vtau, realNumber verticalDirection, realNumber rtau, rea
     Vector3 out;
 
     //Precompute and Equation of Motion
-    realNumber ftau = std::sqrt(rtau*rtau + a*a)*std::sin(thetatau);
-    realNumber rtauSqrtTerm1 = std::sqrt( ((vy*vy*vtau*vtau - a*a + ftau*ftau)*(vy*vy*vtau*vtau - a*a + ftau*ftau)) + 4.0*vy*vy*a*a*vtau*vtau );
-    realNumber rtauSqrtTerm2 = std::sqrt( vy*vy*vtau*vtau - a*a + ftau*ftau +  rtauSqrtTerm1 );
+    realNumber ftau = std::sqrt(rtau*rtau + settings.a*settings.a)*std::sin(thetatau);
+    realNumber rtauSqrtTerm1 = std::sqrt( ((settings.vy*settings.vy*vtau*vtau - settings.a*settings.a + ftau*ftau)*(settings.vy*settings.vy*vtau*vtau - settings.a*settings.a + ftau*ftau)) + 4.0*settings.vy*settings.vy*settings.a*settings.a*vtau*vtau );
+    realNumber rtauSqrtTerm2 = std::sqrt( settings.vy*settings.vy*vtau*vtau - settings.a*settings.a + ftau*ftau +  rtauSqrtTerm1 );
 
     //Velocity
-    realNumber dfdtau = vr / (2.0*ftau);
+    realNumber dfdtau = settings.vr / (2.0*ftau);
     realNumber term1 = (1.0/std::sqrt(2.0));
-    realNumber term2 = 2.0*vy*vy*vtau + 2.0*dfdtau*ftau;
-    realNumber term3 = 2.0*(vy*vy*vtau*vtau - a*a + ftau*ftau) * (2.0*vy*vy*vtau+2.0*dfdtau*ftau);
-    realNumber term4 = 8.0*vy*vy*a*a*vtau;
+    realNumber term2 = 2.0*settings.vy*settings.vy*vtau + 2.0*dfdtau*ftau;
+    realNumber term3 = 2.0*(settings.vy*settings.vy*vtau*vtau - settings.a*settings.a + ftau*ftau) * (2.0*settings.vy*settings.vy*vtau+2.0*dfdtau*ftau);
+    realNumber term4 = 8.0*settings.vy*settings.vy*settings.a*settings.a*vtau;
     realNumber term5 = 2.0*rtauSqrtTerm1;
     realNumber term6 = 2.0*rtauSqrtTerm2;
     realNumber drdtau = term1 * ( (term2 + ( (term3+term4) / (term5) )) / (term6) );
-    realNumber dthetadtau = -(1.0/(std::sqrt(1.0-( ((vy*vtau)/(rtau))*((vy*vtau)/(rtau)) )))) * ((vy/rtau) - ( ((vy*vtau)/(rtau*rtau))*(drdtau))) * sign(verticalDirection);
+    realNumber dthetadtau = -(1.0/(std::sqrt(1.0-( ((settings.vy*vtau)/(rtau))*((settings.vy*vtau)/(rtau)) )))) * ((settings.vy/rtau) - ( ((settings.vy*vtau)/(rtau*rtau))*(drdtau))) * sign(verticalDirection);
     realNumber dphidtau = omega(rtau,thetatau,drdtau,dthetadtau);
 
     out.x = drdtau;
@@ -774,11 +807,11 @@ realNumber omega(realNumber r, realNumber theta, realNumber drdtau, realNumber d
     realNumber gtt = metric_gtt(r,theta);
     realNumber grr = Sigma / Delta;
     realNumber gThetaTheta = Sigma;
-    realNumber W = sign(a)*((w) / (std::pow(std::sqrt(r*r + a*a)*std::sin(theta),alpha)+1.0));
+    realNumber W = sign(settings.a)*((settings.w) / (std::pow(std::sqrt(r*r + settings.a*settings.a)*std::sin(theta),settings.alpha)+1.0_real));
 
-    realNumber phiZAMO = -(gtPhi/gPhiPhi) * std::sqrt( (1.0+grr*drdtau*drdtau + gThetaTheta*dthetadtau*dthetadtau + gPhiPhi*W*W)/((gtPhi*gtPhi)/(gPhiPhi)-gtt) );
+    realNumber phiZAMO = -(gtPhi/gPhiPhi) * std::sqrt( (1.0_real+grr*drdtau*drdtau + gThetaTheta*dthetadtau*dthetadtau + gPhiPhi*W*W)/((gtPhi*gtPhi)/(gPhiPhi)-gtt) );
 
-    return (sign(a)*((w) / (std::pow(std::sqrt(r*r + a*a)*std::sin(theta),alpha)+1.0)) + phiZAMO);
+    return (sign(settings.a)*((settings.w) / (std::pow(std::sqrt(r*r + settings.a*settings.a)*std::sin(theta),settings.alpha)+1.0_real)) + phiZAMO);
 }
 
 
@@ -1002,7 +1035,7 @@ Vector2 sampleAccretionDiskDensity(const RayProperties& rayProperties, const Vec
 Vector2 sampleAstrophysicalJetDensity(const RayProperties& rayProperties, const Vector3& AccretionDiskBounds, const Vector3& mJet)
 {
     realNumber Emission = 0.0, Absorption = 0.0;
-    realNumber term1 = std::sqrt(rayProperties.r * rayProperties.r + a * a);
+    realNumber term1 = std::sqrt(rayProperties.r * rayProperties.r + settings.a*settings.a);
     realNumber x = term1 * std::sin(rayProperties.theta);
     realNumber h = std::abs(rayProperties.r * std::cos(rayProperties.theta));
     realNumber maelstromNoiseField = std::abs(mJet.x);

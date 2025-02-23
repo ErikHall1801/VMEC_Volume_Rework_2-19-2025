@@ -28,18 +28,18 @@ int main(){
 
     //Set up the initial sensor: camera view and properties
     SensorProperties sensorproperties;
-    sensorproperties.maxWidth = IMAGE_WIDTH;
-    sensorproperties.maxHeight = IMAGE_HEIGHT;
+    sensorproperties.maxWidth = settings.image_width;
+    sensorproperties.maxHeight = settings.image_height;
     sensorproperties.SensorSize = 35.0; //Physical sensor size in mm, here Super 35
     sensorproperties.FocalLength = 24.0; //Camera FOV (focal length) in mm
     sensorproperties.FocalLength /= 1000.0; //Convert to m
     sensorproperties.camPos.x = 0.005; //Cartesian camera position
-    sensorproperties.camPos.y = 16.5023;
-    sensorproperties.camPos.z = 56.23; 
+    sensorproperties.camPos.y = 24.5023;
+    sensorproperties.camPos.z = 196.23; 
     sensorproperties.camMomentum.x = -0.0; //Read r, theta, phi COORDINATE velocity
     sensorproperties.camMomentum.y = -0.0;
     sensorproperties.camMomentum.z = 0.0; 
-    sensorproperties.AngleX = -16.6123; //Pitch
+    sensorproperties.AngleX = -7.0123; //Pitch
     sensorproperties.AngleY = 0.064; //Yaw
     sensorproperties.AngleZ = 0.023; //Roll
 
@@ -47,9 +47,6 @@ int main(){
     localProperties cameraProperties;
     RayProperties pointProperties;
     Vector3 camPos(sensorproperties.camPos.x,sensorproperties.camPos.y,sensorproperties.camPos.z), camMomentum(sensorproperties.camMomentum.x,sensorproperties.camMomentum.y,sensorproperties.camMomentum.z), camDir;
-    BVObjects emptyBV;
-
-    emptyBV.disk = false; emptyBV.jet = false; emptyBV.ambient = false;
 
     cameraProperties = initializeCamera(camPos,camMomentum);
     pointProperties.t = cameraProperties.t;
@@ -72,7 +69,7 @@ int main(){
 
     //Camera Animation variables
     Vector3 XYZCam;
-    realNumber hStepSum = 0.0, frameTime = 0.0, frameTimeStep = 1.0/realNumber(FRAME_RATE);
+    realNumber hStepSum = 0.0, frameTime = 0.0, frameTimeStep = 1.0/realNumber(settings.frame_rate);
 
     //Time at infinity
     realNumber globalTime = 0.0;
@@ -81,21 +78,21 @@ int main(){
     //Animation Loop
     vmec_log("Entering Main Program Loop");
     log_flush();
-    for(int frameNumber = 0; frameNumber < NUMBER_OF_FRAMES; frameNumber++)
+    for(int frameNumber = 0; frameNumber < settings.number_of_frames; frameNumber++)
     {
         log_flush();
         vmec_log("Starting frame: ", frameNumber);
-        if(ANIMATE_PATH)
+        if(settings.animate_path)
         {
             //F
         }
 
-        if(ANIMATE_FREE_FALL)
+        if(settings.animate_free_fall)
         {
-            while(frameTimeStep*TIME_RAMP > hStepSum)
+            while(frameTimeStep*settings.time_ramp > hStepSum)
             {
-                pointProperties.hStep = 1e-6*TIME_RAMP;
-                pointProperties = rayRKF45(pointProperties,emptyBV,0.0);
+                pointProperties.hStep = 1e-6*settings.time_ramp;
+                pointProperties = rayRKF45(pointProperties);
                 hStepSum += pointProperties.hStep;
             }
 
@@ -110,20 +107,22 @@ int main(){
             sensorproperties.camMomentum.z = pointProperties.u3;
         }
 
-        if(BV_JET_TOGGLE)
+        if(settings.bv_jet_toggle)
         {
             //F
         }
 
-        if(frameNumber >= F_START && frameNumber <= F_END && frameNumber % FRAME_STEP == 0)
+        if(frameNumber >= settings.f_start && frameNumber <= settings.f_end && frameNumber % settings.frame_step == 0)
         {
-            trace_all_rays(globalTime+globalTimeOffset, total_threads, sensorproperties, disk_lattice_noise_points, num_jet_lattice_points, FRAME_jet_lattice_noise_points, pixels_raw);
+            //trace_all_rays(globalTime+globalTimeOffset, total_threads, sensorproperties, disk_lattice_noise_points, num_jet_lattice_points, FRAME_jet_lattice_noise_points, pixels_raw);
 
             //Convert raw (doubles) pixels to proper RGB
-            write_binary_realNumber(pixels_raw,frameNumber/FRAME_STEP);
+            //write_binary_realNumber(pixels_raw,frameNumber/settings.frame_step);
         }
 
-        if(frameNumber >= F_END)
+        std::cout << " " << pointProperties.r << std::endl;
+
+        if(frameNumber >= settings.f_end)
         {
             break;
         }

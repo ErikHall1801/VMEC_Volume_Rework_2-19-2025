@@ -15,9 +15,9 @@ void generate_noise_points(int &num_disk_points, noise_point* &disk_noise_points
 	std::uniform_real_distribution<realNumber> v_dist(-1.0,1.0);
 
 	std::vector<noise_point> noise_points_vec;
-	for(int o = 0; o < DISK_NOISE_OCTAVES; o++)
+	for(int o = 0; o < settings.disk_noise_octaves; o++)
 	{
-		octaveSize = DISK_NOISE_SIZE_FIRST_OCTAVE*std::pow(2,o);
+		octaveSize = settings.disk_noise_size_first_octave*std::pow(2,o);
 		for(int idx = 0; idx < octaveSize; idx++){
 			noise_point_curr.r = std::sqrt(r_dist(generator));
 			noise_point_curr.t = t_dist(generator);
@@ -40,7 +40,7 @@ void generate_lattice_noise_points(int &num_lattice_points, lattice_noise_point*
 
 	int octaveIndices = 0;
 	num_lattice_points = 0;
-	num_lattice_points = JET_NOISE_FIRST_OCTAVE * std::pow(2,JET_NOISE_OCTAVES-1);
+	num_lattice_points = settings.jet_noise_first_octave * std::pow(2,settings.jet_noise_octaves-1);
 
    lattice_noise_points = allocate<lattice_noise_point>( num_lattice_points );
 
@@ -53,7 +53,7 @@ void generate_lattice_noise_points(int &num_lattice_points, lattice_noise_point*
 
 	for(int idx=0;idx<num_lattice_points;++idx)
     {
-		lattice_noise_points[idx].r = (std::sqrt(r_dist(generator)) * JET_RADIUS_SCALE) + JET_MINOR_RADIUS;
+		lattice_noise_points[idx].r = (std::sqrt(r_dist(generator)) * settings.jet_radius_scale) + settings.jet_minor_radius;
 		lattice_noise_points[idx].p = p_dist(generator);
 		lattice_noise_points[idx].t = M_PI_2;
 		lattice_noise_points[idx].v = v_dist(generator);
@@ -65,8 +65,8 @@ void generate_lattice_noise_points(int &num_lattice_points, lattice_noise_point*
 
 void do_setup(pix_realNumber* &pixels_raw, pix_RGB* &pixels_clean, int &num_lattice_points, lattice_noise_point* &lattice_noise_points, int &num_disk_points, noise_point* &disk_noise_points){
 
-	pixels_raw = allocate<pix_realNumber>( IMAGE_HEIGHT * IMAGE_WIDTH );
-	pixels_clean = allocate<pix_RGB>( IMAGE_HEIGHT * IMAGE_WIDTH );
+	pixels_raw = allocate<pix_realNumber>( settings.image_height * settings.image_width );
+	pixels_clean = allocate<pix_RGB>( settings.image_height * settings.image_width );
 
 	//Jet Lattice points
 	generate_lattice_noise_points(num_lattice_points, lattice_noise_points);

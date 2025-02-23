@@ -20,6 +20,7 @@ realNumber euclidianDistance(const Vector3& v1, const Vector3& v2);
 realNumber euclidianDistance2(const Vector3& v1, const Vector3& v2);
 Vector3 rotate2D(const Vector3& rayOrig, const realNumber angle);
 Matrix3 rotateRay(const realNumber rX, const realNumber rY, const realNumber rZ);
+bool stepBetweenGeodesic(const int &max, const Vector3 &startPos, const Vector3 &dir, const Vector3 &targetPos, const realNumber &dx, const realNumber &minDist);
 
 //Metric Tensor Components
 realNumber metric_delta(const realNumber r);
@@ -42,7 +43,8 @@ realNumber quadraticBezier(const realNumber x, const realNumber P0, const realNu
 realNumber bezierFade(const realNumber x, const realNumber u1, const realNumber h, const realNumber N, const realNumber k);
 realNumber gx(const realNumber N0, const realNumber N1, const realNumber s, const realNumber r, const realNumber x);
 realNumber radialChecker(const realNumber r, const realNumber phi, const realNumber scale, const realNumber w, const realNumber x);
-bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &rayOrig, const Vector3 &rayDir, const realNumber &dx);
+bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &rayOrig, const Vector3 &rayDir, const realNumber &dx, Vector3 &hit);
+bool raySphereIntersection(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &pos, const realNumber &radius, const realNumber &dx);
 
 //Local initializations
 localProperties initializeCamera(const Vector3& camPos, const Vector3& camMomentum);
@@ -50,7 +52,7 @@ RayProperties initializeRay(const Vector3& rayOrig, const Vector3& rayDir, const
 
 //Ray operations
 void pointInBounds(BVObjects& BoundingVolumes, const realNumber& r, const realNumber& theta);
-RayProperties rayRKF45(const RayProperties& incomingValues, const BVObjects BV, realNumber Medium);
+RayProperties rayRKF45(const RayProperties& incomingValues);
 
 //Ray Initialization
 Vector4 restframeToZAMO(const Vector3& rayDir, const localProperties& cameraProperties);
