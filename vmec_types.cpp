@@ -344,6 +344,12 @@ realNumber VectorLength(const Vector4& v1) {
     return std::sqrt((v1.x * v1.x) + (v1.y * v1.y) + (v1.z * v1.z) + (v1.t * v1.t));
 }
 
+Vector3 VectorCross(const Vector3& v1, const Vector3& v2)
+{
+    Vector3 m1(v1.y*v2.z - v1.z*v2.y , v1.z*v2.x - v1.x*v2.z , v1.x*v2.y - v1.y*v2.x);
+    return m1;
+}
+
 Vector2 operator*(const Matrix2& M1, const Vector2& v1) {
     Vector2 result;
     result.x = M1.M00 * v1.x + M1.M01 * v1.y;

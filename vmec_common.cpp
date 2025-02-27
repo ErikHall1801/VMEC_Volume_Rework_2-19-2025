@@ -1,8 +1,5 @@
 #include "vmec_common.h"
 
-#include <cstdlib>
-#include <cstring>
-
 namespace vmec
 {
 
@@ -100,6 +97,43 @@ bool raySphereIntersection(const Vector3 &rayOrig, const Vector3 &rayDir, const 
     if(t0 > dx) return false;
 
     //t0 is now the distance
+    return true;
+}
+
+
+//ray-box intersection
+bool intersectAABB(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &max, const Vector3 &min, Vector3 &hitIn, Vector3 &hitOut)
+{
+    realNumber tmin = (min.x - rayOrig.x) / rayDir.x;
+    realNumber tmax = (max.x - rayOrig.x) / rayDir.x;
+
+    if(tmin > tmax) std::swap(tmin,tmax);
+
+    realNumber tymin = (min.y - rayOrig.y) / rayDir.y;
+    realNumber tymax = (max.y - rayOrig.y) / rayDir.y;
+
+    if(tymin > tymax) std::swap(tymin, tymax);
+
+    if((tmin > tymax) || (tymin > tmax))
+        return false;
+
+    if(tymin > tmin) tmin = tymin;
+    if(tymax < tmax) tmax = tymax;
+
+    realNumber tzmin = (min.z - rayOrig.z) / rayDir.z;
+    realNumber tzmax = (max.z - rayOrig.z) / rayDir.z;
+
+    if(tzmin > tzmax) std::swap(tzmin,tzmax);
+
+    if((tmin > tzmax) || (tzmin > tmax))
+        return false;
+
+    if(tzmin > tmin) tmin = tzmin;
+    if(tzmax < tmax) tmax = tzmax;
+
+    hitIn = rayOrig + rayDir*tmax;
+    hitOut = rayOrig + rayDir*tmin;
+
     return true;
 }
 
@@ -620,7 +654,7 @@ realNumber deriveu0(realNumber u1, realNumber u2, realNumber u3, realNumber r, r
 //Runge Kutta-Fehlberg Scheme
 RayProperties rayRKF45(const RayProperties& incomingValues)
 {
-    realNumber rateOfChange, rateOfChangeC, minStep, hU, absError = 1e10, tol = 1e-5, newhV = 0.0, newhC = 0.0, newh = 0.0, ts = 0.1;
+    realNumber rateOfChange, rateOfChangeC, minStep, hU, absError = 1e10, tol = 1e-5, newh = 0.0;
     RayProperties newy, error, k1, k2, k3, k4, k5, k6;
     hU = incomingValues.hStep;
 
@@ -744,7 +778,7 @@ realNumber generalizedTimeDilationFactor(realNumber r, realNumber theta, const V
 //Disk Velocity function
 realNumber uPhi(realNumber r)
 {
-    return -(sign(settings.a)*std::sqrt(r) / (r * std::sqrt( (r*r) - (3.0*r) + (2.0*std::abs(settings.a)*std::sqrt(r))))) * settings.disk_lattice_velocity_scale;
+    return (sign(settings.a)*std::sqrt(r) / (r * std::sqrt( (r*r) - (3.0*r) + (2.0*std::abs(settings.a)*std::sqrt(r))))) * settings.disk_lattice_velocity_scale;
 }
 
 

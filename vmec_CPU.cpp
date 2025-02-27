@@ -32,7 +32,7 @@ static void traverseSearch(int startIndex, int endIndex, float target_low, float
 
 
 //Distance between Sample and disk lattice point
-static Vector3 evaluateDiskLatticePoint(const realNumber globalTime, const int i, Vector3 sPos, noise_point* disk_lattice_noise_points, const realNumber t, const realNumber r, const realNumber theta)
+static Vector3 evaluateDiskLatticePoint(const realNumber globalTime, const int i, const Vector3 &sPos, noise_point* disk_lattice_noise_points, const realNumber &t, const realNumber &r, const realNumber &theta)
 {
     Vector4 diskLatticePoint;
     diskLatticePoint.x = disk_lattice_noise_points[i].r;
@@ -242,18 +242,54 @@ static void ANA(realNumber globalTime, realNumber dt, lattice_noise_point* FRAME
 }
 
 
+static int interp_find_index(realNumber target, const realNumber *s, const int max_steps, const int prev_idx)
+{
+    int new_idx = std::max(std::min(prev_idx,max_steps-1),0);
+    if(s[new_idx]<=target && s[new_idx+1]>target){
+    }
+    else if(s[new_idx+1]<=target){
+        while(new_idx<max_steps-1 && s[new_idx+1]<=target){
+            ++new_idx;
+        }
+    }
+    else{
+        while(new_idx>0 && s[new_idx]>target){
+            --new_idx;
+        }
+    }
+    return new_idx;
+}
+
+
+// Linear interpolation
+static RayProperties interp_along_geodesic(realNumber target, const RayProperties *ray_points, const int num_k, const realNumber *k, int &interp_idx)
+{
+    RayProperties result;
+
+    interp_idx = interp_find_index(target, k, num_k, interp_idx);
+    realNumber coeff = (target - k[interp_idx])/(k[interp_idx+1]-k[interp_idx]); 
+
+    result = ray_points[interp_idx] + coeff*(ray_points[interp_idx+1]-ray_points[interp_idx]);
+    return result;
+}
+
+
 //Trace Geodesic
-static void trace_geodesic(RayProperties* geodesic, const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &rayMomentum, bool &ray_convergence, bool &hit_disk, bool &hit_jet, bool &hit_ambient, int &i_rs, int &i_celestial_sphere, int &i_hit_disk, int &i_hit_jet, int &i_hit_ambient) 
+static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumber* geodesic_k, localProperties &positionProperties, const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &rayMomentum, bool &ray_convergence, bool &hit_disk, bool &hit_jet, bool &hit_ambient, int &i_rs, int &i_celestial_sphere, int &i_hit_disk, int &i_hit_jet, int &i_hit_ambient) 
 {
     //Variable declaration
+    bool 
+        break_tag = false;
+    
     int
-        i = 0;
+        i;
 
     realNumber
         hStep = 1e-3;
 
     localProperties
         pointProperties = initializeCamera(rayOrig,rayMomentum);
+        positionProperties = pointProperties;
 
     RayProperties
         pathProperties = initializeRay(rayOrig,rayDir,pointProperties);
@@ -262,54 +298,45 @@ static void trace_geodesic(RayProperties* geodesic, const Vector3 &rayOrig, cons
     BVObjects 
         BoundingVolumes;
 
-    //Initialize Array
-    for(i = 0; i < settings.integration_depth; i++)
-    {
-        geodesic[i].t = 0.0;
-        geodesic[i].r = 0.0;
-        geodesic[i].theta = 0.0;
-        geodesic[i].phi = 0.0;
-        geodesic[i].u0 = 0.0;
-        geodesic[i].u1 = 0.0;
-        geodesic[i].u2 = 0.0;
-        geodesic[i].u3 = 0.0;
-        geodesic[i].hStep = 0.0;
-    }
+    realNumber
+        k_current = 0.0_real;
+
+    geodesic_size = 0;
 
     //Geodesic Integration
     for(i = 0; i < settings.integration_depth; i++)
     {
            
-        if(pathProperties.r < (1.0+std::sqrt(1.0-(std::abs(settings.a)*std::abs(settings.a))))*settings.rs_scale) //Event Horizon
+        if(pathProperties.r < settings.rs*settings.rs_scale) //Event Horizon
         {
             i_rs = i;
-            break;
+            break_tag = true;
         }
         else if(pathProperties.r > settings.celestial_sphere_radius) //Celestial Sphere
         {
             i_celestial_sphere = i;
-            break;
+            break_tag = true;
         }
         else if(i+1 == settings.integration_depth) //Ray did not converge
         {
-            bool ray_convergence = false;
-            break;
+            ray_convergence = false;
+            break_tag = true;
         }
 
         //In-bounding region check
         pointInBounds(BoundingVolumes,pathProperties.r,pathProperties.theta);
 
-        if(BoundingVolumes.disk)
+        if(BoundingVolumes.disk && !hit_disk)
         {
             i_hit_disk = i;
             hit_disk = true;
         }
-        if(BoundingVolumes.jet)
+        if(BoundingVolumes.jet && !hit_jet)
         {
             i_hit_jet = i;
             hit_jet = true;
         }
-        if(BoundingVolumes.ambient)
+        if(BoundingVolumes.ambient && !hit_ambient)
         {
             i_hit_ambient = i;
             hit_ambient = true;
@@ -317,51 +344,28 @@ static void trace_geodesic(RayProperties* geodesic, const Vector3 &rayOrig, cons
 
         //Update Array
         geodesic[i] = pathProperties;
+        geodesic_k[i] = k_current;
+        ++geodesic_size;
 
         //March step
         pathProperties = rayRKF45(pathProperties);
+        k_current += euclidianDistance(BoyerLindquistToCartesian(geodesic[i].r,geodesic[i].theta,geodesic[i].phi),BoyerLindquistToCartesian(pathProperties.r,pathProperties.theta,pathProperties.phi));
+
+        if(break_tag)
+        {
+            break;
+        }
     }
 }
 
 
 //Debugging viewer
-static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig, const Vector3& rayDir, const Vector3& camPos, const Vector3& camMomentum, noise_point* disk_lattice_noise_points, int num_lattice_points, lattice_noise_point* FRAME_jet_lattice_noise_points, dynamic_lattice_point* RAY_jet_lattice_noise_points)
+static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig, const Vector3& rayDir, const Vector3& camPos, const Vector3& camMomentum, RayProperties *geodesic, int &geodesic_size, realNumber* geodesic_k, noise_point* disk_lattice_noise_points, int num_lattice_points, lattice_noise_point* FRAME_jet_lattice_noise_points, dynamic_lattice_point* RAY_jet_lattice_noise_points)
 {
-    //Debugger Settings        
-        //Scene Selection
-        bool toggleTestScene = true;
-        bool toggleLatticeScene = false;
-
-            //Relative to Both Scenes
-            bool toggleColorBackground = false;
-
-                //Relative to Test scene
-                bool toogleIntegrationDepthOverlay = false; //Pixel color = Number of steps taken by a ray
-                bool toogleCoordinateOverlay = false; //Pixel color = coordinates of the rays final position (R = r, G = theta, B = phi)
-                bool toggleDiskVisualization = true; //Renders a 2D checker board disk
-
-                //Relative to Lattice Points
-                bool toggleDiskBV = true;
-                bool toggleJetBV = false;
-                bool toggleAmbientBV = false;
-
-                    //Disk
-                    bool toggleDiskLatticePoints = true;
-
-                    //Jet
-                    bool toggleJetLatticePoints = false;
-
-                        //Realtive to Both
-                        bool toggleLocalZAMOVelocity = false;
-
-
-
-    if(toggleTestScene && toggleLatticeScene)
+    if(settings.test_scene && settings.lattice_scene)
     {
         //return 0; //Error
     }
-
-
 
     //Precompute Geodesic
         //Geodesic tags and bools
@@ -370,40 +374,43 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             hit_disk = false,
             hit_jet = false,
             hit_ambient = false;
-        
+
         int
-            i_rs = settings.integration_depth,
-            i_celestial_sphere = settings.integration_depth,
-            i_hit_disk = settings.integration_depth,
-            i_hit_jet = settings.integration_depth,
-            i_hit_ambient = settings.integration_depth;
-        
+            i_rs = settings.integration_depth - 1,
+            i_celestial_sphere = settings.integration_depth - 1,
+            i_hit_disk = settings.integration_depth - 1,
+            i_hit_jet = settings.integration_depth - 1,
+            i_hit_ambient = settings.integration_depth - 1;
+
+        localProperties
+            camProperties;
+
         //Compute Geodesic
-        RayProperties *geodesic = (RayProperties*)malloc(sizeof(RayProperties)*settings.integration_depth);
-        trace_geodesic(geodesic,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
-
-
+        trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
 
     //Debugger Variables
         bool 
             hit_disk_lattice = false,
             hit_jet_lattice = false,
-            hit_disk_BV = false,
-            hit_jet_BV = false,
-            hit_ambient_BV = false,
             break_tag = false;
     
         int
-            i,
+            i = 0,
             hit_disk_ID = 0,
-            hit_jet_ID = 0;
+            hit_jet_ID = 0,
+            idx_interp = 0,
+            interp_idx = 0;
 
         realNumber
             hStep = 1e-3,
             dx = 1.0,
             checker = 0.0,
-            dt = 0.0;
-    
+            redshift_factor = 0.0,
+            k_intersect = 0.0,
+            geodesic_length = 0.0,
+            k = 0.0,
+            dk = 0.5;
+
         Vector3
             dir(rayDir.x,rayDir.y,rayDir.z), 
             p1(rayOrig.x,rayOrig.y,rayOrig.z),
@@ -412,7 +419,8 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             checkerDiskNormal(0.0,1.0,0.0),
             checkerDiskp0(0.0,0.0,0.0),
             pointPosition(0.0,0.0,0.0),
-            hitDisk(0.0,0.0,0.0);
+            hitDisk(0.0,0.0,0.0),
+            localVelocity(0.0,0.0,0.0);
     
         Vector4
             initialU(geodesic[0].u0,geodesic[0].u1,geodesic[0].u2,geodesic[0].u3), 
@@ -420,13 +428,11 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
 
         RayProperties
             rayProperties;
-    
-    
-    
+
     //Checker Disk test scene
-    if(toggleTestScene)
+    if(settings.test_scene)
     {
-        for(i = 0; i <= settings.integration_depth; i++)
+        for(i = 0; i < geodesic_size; i++)
         {
             rayProperties = geodesic[i];
 
@@ -439,16 +445,13 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             //Celestial Sphere
             if(i == i_celestial_sphere && !break_tag)
             {
-                if(toggleColorBackground)
+                if(settings.colored_background)
                 {
                     p1 = p1 / VectorLength(p1);
                     backgroundCol.set((p1.x + 1.0) / 2.0, (p1.y + 1.0) / 2.0, (p1.z + 1.0) / 2.0);
                 }
 
-                RGBA_out.x += backgroundCol.x;
-                RGBA_out.y += backgroundCol.y;
-                RGBA_out.z += backgroundCol.z;
-                RGBA_out.t = 0.0;
+                RGBA_out.set(RGBA_out.x + backgroundCol.x , RGBA_out.y + backgroundCol.y , RGBA_out.z + backgroundCol.z , 0.0);
             }
 
             //Ray did not hit anything
@@ -459,16 +462,27 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Checker Disk
-            if(rayDiskIntersection(checkerDiskNormal,checkerDiskp0,p0,dir,dx,hitDisk) && toggleDiskVisualization && !break_tag)
+            if(rayDiskIntersection(checkerDiskNormal,checkerDiskp0,p0,dir,dx,hitDisk) && settings.checker_disk_toggle && !break_tag)
             {
-                p1 = hitDisk;
-                hitDisk = cartesianToBL(hitDisk);
-                checker = radialChecker(hitDisk.x, hitDisk.z, settings.checker_disk_major_radius, 0.1, settings.checker_disk_minor_radius);
-                p1 = p1 / VectorLength(p1);
-                RGBA_out.x += checker * ((p1.x + 1.0) / 2.0);
-                RGBA_out.y += checker * ((p1.y));
-                RGBA_out.z += checker * ((p1.z));
-                RGBA_out.t = 0.0;
+                k_intersect = geodesic_k[i-1] + euclidianDistance(p0,hitDisk);
+                
+                if(settings.checker_disk_Bi_sexual_color)
+                {
+                    p1 = hitDisk;
+                    hitDisk = cartesianToBL(hitDisk);
+                    checker = radialChecker(hitDisk.x, hitDisk.z, settings.checker_disk_major_radius, 0.1, settings.checker_disk_minor_radius);
+                    p1 = p1 / VectorLength(p1);
+                    RGBA_out.set(RGBA_out.x + checker*((p1.x + 1.0) / 2.0) , RGBA_out.y + checker*p1.y , RGBA_out.z + checker*p1.z, 0.0);
+                }
+                else if(settings.checker_disk_Z_factor)
+                {
+                    int idx_interp = 0;
+                    rayProperties = interp_along_geodesic(k_intersect, geodesic, geodesic_size, geodesic_k, idx_interp);
+                    hitDisk = cartesianToBL(hitDisk);
+                    localVelocity.set(0.0,0.0,(uPhi(hitDisk.x)));
+                    redshift_factor = generalizedRedshiftFactor(rayProperties,camProperties,initialU,localVelocity);
+                    RGBA_out.set(redshift_factor,redshift_factor,redshift_factor,0.0);
+                }
 
                 break_tag = true;
             }
@@ -476,12 +490,12 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             //Break Condition
             if(break_tag)
             {
-                if(toogleIntegrationDepthOverlay) //Absolute Visualization
+                if(settings.integration_depth_overlay) //Absolute Visualization
                 {
                     RGBA_out.set(i,i,i,0.0);
                 }
 
-                if(toogleCoordinateOverlay) //Absolute Visualization
+                if(settings.coordinate_overlay) //Absolute Visualization
                 {
                     RGBA_out.set(rayProperties.r,rayProperties.theta,rayProperties.phi,0.0);
                 }
@@ -498,10 +512,8 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
         }
     }
 
-
-
     //Lattice Point test scene
-    if(toggleLatticeScene)
+    if(settings.lattice_scene)
     {
         if(hit_jet)
         {
@@ -509,44 +521,46 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             initialize_per_RAY_lattice_points(num_lattice_points, RAY_jet_lattice_noise_points, FRAME_jet_lattice_noise_points);
         }
 
-        if(hit_disk && toggleDiskBV)
+        if(hit_disk && settings.bv_disk_toggle)
         {
             RGBA_out.x += 0.05;
         }
 
-        if(hit_jet && toggleJetBV)
+        if(hit_jet && settings.bv_jet_toggle)
         {
             RGBA_out.y += 0.05;
         }
 
-        if(hit_ambient && toggleAmbientBV)
+        if(hit_ambient && settings.bv_ambient_medium_toggle)
         {
             RGBA_out.z += 0.05;
         }
-        
-        for(i = 0; i <= settings.integration_depth; i++)
+
+        geodesic_length = geodesic_k[geodesic_size-1];
+
+        while(geodesic_length > k)
         {
-            rayProperties = geodesic[i];
+            //Lerp along stored geodesic and derive iterator
+            rayProperties = interp_along_geodesic(k, geodesic, geodesic_size, geodesic_k, idx_interp);
+            interp_idx = interp_find_index(k, geodesic_k, geodesic_size, interp_idx);
+            i = interp_idx;
 
             //Event Horizon
-            if(i == i_rs && !break_tag)
+            if(i >= i_rs && !break_tag)
             {
                 break_tag = true;
             }
 
             //Celestial Sphere
-            if(i == i_celestial_sphere && !break_tag)
+            if(i >= i_celestial_sphere && !break_tag)
             {
-                if(toggleColorBackground)
+                if(settings.colored_background)
                 {
                     p1 = p1 / VectorLength(p1);
                     backgroundCol.set((p1.x + 1.0) / 2.0, (p1.y + 1.0) / 2.0, (p1.z + 1.0) / 2.0);
                 }
 
-                RGBA_out.x += backgroundCol.x;
-                RGBA_out.y += backgroundCol.y;
-                RGBA_out.z += backgroundCol.z;
-                RGBA_out.t = 0.0;
+                RGBA_out.set(RGBA_out.x + backgroundCol.x , RGBA_out.y + backgroundCol.y , RGBA_out.z + backgroundCol.z , 0.0);
             }
 
             //Ray did not hit anything
@@ -557,12 +571,12 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Visualize Disk Points
-            if(toggleDiskLatticePoints && hit_disk && i >= i_hit_disk && !break_tag)
+            if(settings.toggle_disk_lattice_points && hit_disk && i >= i_hit_disk && !break_tag)
             {
                 for(int g = 0; g < settings.disk_n_points; g++ && !hit_disk_lattice)
                 {
                     pointPosition = evaluateDiskLatticePoint(globalTime, g, p1, disk_lattice_noise_points, rayProperties.t, rayProperties.r, rayProperties.theta);
-                    if(stepBetweenGeodesic(12,p0,dir,pointPosition,dx,settings.disk_lattice_point_size))
+                    if(euclidianDistance(pointPosition,BoyerLindquistToCartesian(rayProperties.r, rayProperties.theta, rayProperties.phi)) < settings.disk_lattice_point_size)
                     {
                         hit_disk_lattice = true;
                         hit_disk_ID = g;
@@ -572,16 +586,16 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
 
                 if(hit_disk_lattice)
                 {
-                    RGBA_out.x += ndetermin(hit_disk_ID);
-                    RGBA_out.y += ndetermin(hit_disk_ID+465);
-                    RGBA_out.z += ndetermin(hit_disk_ID+5742);
+                    RGBA_out.x += ndetermin(hit_disk_ID+275);
+                    RGBA_out.y += ndetermin(hit_disk_ID+4653);
+                    RGBA_out.z += ndetermin(hit_disk_ID+57542);
                     RGBA_out.t = 0.0;
                     RGBA_out = RGBA_out/VectorLength(RGBA_out);
                 }
             }
 
             //Visualize Jet Points
-            if(toggleJetLatticePoints && hit_jet && i >= i_hit_jet && !break_tag)
+            if(settings.toggle_jet_lattice_points && hit_jet && i >= i_hit_jet && !break_tag)
             {
                 for(int g = 0; g < settings.jet_n_points; g++)
                 {
@@ -606,12 +620,12 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             //Break Condition & Absolute Visualizations
             if(break_tag)
             {
-                if(toogleIntegrationDepthOverlay)
+                if(settings.integration_depth_overlay)
                 {
                     RGBA_out.set(i,i,i,0.0);
                 }
 
-                if(toogleCoordinateOverlay)
+                if(settings.coordinate_overlay)
                 {
                     RGBA_out.set(rayProperties.r,rayProperties.theta,rayProperties.phi,0.0);
                 }
@@ -625,40 +639,44 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             dx = euclidianDistance(p0,p1);
             dir = p1 - p0;
             dir = dir / VectorLength(dir);
+
+            //Parameter along geodesic
+            k += dk;
         }
     }
-
-    free(geodesic);
     return RGBA_out;
 }
 
 
 //Magik Sandbox
 static Vector4 vmec_magik_sandbox(const Vector3 rayOrig, const Vector3 rayDir)
-{    
-    Vector3
-        AABBmax(10.0,10.0,10.0),
-        AABBmin(-10.0,-10.0,-10.0),
-        hit1(0.0,0.0,0.0),
-        hit0(0.0,0.0,0.0),
-        backgroundCol(1.0,1.0,1.0);
-
+{
     Vector4
         RGBA_out(0.0,0.0,0.0,0.0);
-
-    if(intersectAABB(rayOrig,rayDir,AABBmax,AABBmin,hit1,hit0))
+    
+    if(settings.magik_trivial_scene)
     {
-        realNumber dx = euclidianDistance(hit1,hit0);
-        realNumber T = std::exp(-dx*0.25);
-        backgroundCol = backgroundCol*T;
+        Magik::trivial(RGBA_out,rayOrig,rayDir);
+    }
+    else if(settings.magik_single_scene)
+    {
+        Magik::single(RGBA_out,rayOrig,rayDir);
+    }
+    else if(settings.magik_single_MFP_scene)
+    {
+        Magik::single_MFP(RGBA_out,rayOrig,rayDir);
+    }
+    else if(settings.magik_muliple_scene)
+    {
+        Magik::multiple();
     }
 
-    RGBA_out.set(backgroundCol.x,backgroundCol.y,backgroundCol.z,0.0);
     return RGBA_out;
 }
 
+
 //Main Pixel Shader
-static pix_realNumber pixel_function(const realNumber globalTime, int width, int height, const SensorProperties sensorproperties, noise_point *disk_lattice_noise_points, int num_lattice_points, lattice_noise_point *FRAME_jet_lattice_noise_points,  dynamic_lattice_point* RAY_jet_lattice_noise_points)
+static pix_realNumber pixel_function(const realNumber globalTime, int width, int height, const SensorProperties sensorproperties, RayProperties* geodesic, int &geodesic_size, realNumber* geodesic_k, noise_point *disk_lattice_noise_points, int num_lattice_points, lattice_noise_point *FRAME_jet_lattice_noise_points,  dynamic_lattice_point* RAY_jet_lattice_noise_points)
 {
     pix_realNumber pixel;
 
@@ -707,7 +725,7 @@ static pix_realNumber pixel_function(const realNumber globalTime, int width, int
         //Accumulate results for Debugger
         if(!settings.render_magik_sandbox && settings.render_debug)
         {
-            mRender = mRender + vmec_debugger(globalTime,rayOrig,rayDir,sensorproperties.camPos,sensorproperties.camMomentum,disk_lattice_noise_points,num_lattice_points,FRAME_jet_lattice_noise_points,RAY_jet_lattice_noise_points);
+            mRender = mRender + vmec_debugger(globalTime, rayOrig, rayDir, sensorproperties.camPos, sensorproperties.camMomentum, geodesic, geodesic_size, geodesic_k, disk_lattice_noise_points, num_lattice_points, FRAME_jet_lattice_noise_points, RAY_jet_lattice_noise_points);
         }
 
         //Accumlate results for Sandbox
@@ -726,30 +744,32 @@ static pix_realNumber pixel_function(const realNumber globalTime, int width, int
 }
 
 
-static void thread_trace_ray(const realNumber globalTime, const SensorProperties sensorproperties, noise_point *disk_lattice_noise_points, const int num_lattice_points, lattice_noise_point *FRAME_jet_lattice_noise_points, int* idx_ray, std::mutex* thread_lock, pix_realNumber *pixels_raw){
+static void thread_trace_ray(int thread_idx, const realNumber globalTime, const SensorProperties sensorproperties, RayProperties* all_geodesics, int* geodesic_sizes, realNumber* geodesics_k, noise_point *disk_lattice_noise_points, const int num_lattice_points, lattice_noise_point *FRAME_jet_lattice_noise_points, dynamic_lattice_point *dynamic_noise_points, int* idx_ray, std::mutex* thread_lock, pix_realNumber *pixels_raw){
     int x,y;
     int total_rays = sensorproperties.maxWidth*sensorproperties.maxHeight;
-    dynamic_lattice_point *RAY_jet_lattice_noise_points = (dynamic_lattice_point*)malloc(sizeof(dynamic_lattice_point)*num_lattice_points);
+    RayProperties* geodesic = &all_geodesics[thread_idx * settings.integration_depth];
+    int geodesic_size = geodesic_sizes[thread_idx];
+    realNumber* geodesic_k = &geodesics_k[thread_idx * settings.integration_depth];
+    dynamic_lattice_point *RAY_jet_lattice_noise_points = &dynamic_noise_points[num_lattice_points*thread_idx];
     while(idx_ray[0]<total_rays){
         thread_lock[0].lock();
         x = idx_ray[0] % sensorproperties.maxWidth;
         y = idx_ray[0] / sensorproperties.maxWidth;
         ++idx_ray[0];
         thread_lock[0].unlock();
-        pixels_raw[x+y*sensorproperties.maxWidth]=pixel_function(globalTime,x,y,sensorproperties,disk_lattice_noise_points,num_lattice_points,FRAME_jet_lattice_noise_points,RAY_jet_lattice_noise_points);
+        pixels_raw[x+y*sensorproperties.maxWidth]=pixel_function(globalTime, x, y, sensorproperties, geodesic, geodesic_size, geodesic_k, disk_lattice_noise_points, num_lattice_points, FRAME_jet_lattice_noise_points, RAY_jet_lattice_noise_points);
     }
-    free(RAY_jet_lattice_noise_points);
 }
 
 
-void trace_all_rays(const realNumber globalTime, const int total_threads, const SensorProperties sensorproperties, noise_point *disk_lattice_noise_points, const int num_lattice_points, lattice_noise_point *FRAME_jet_lattice_noise_points, pix_realNumber *pixels_raw){
+void trace_all_rays(const realNumber globalTime, const int total_threads, const SensorProperties sensorproperties, RayProperties* all_geodesics, int* geodesic_sizes, realNumber* geodesics_k, noise_point *disk_lattice_noise_points, const int num_lattice_points, lattice_noise_point *FRAME_jet_lattice_noise_points, dynamic_lattice_point *dynamic_noise_points, pix_realNumber *pixels_raw){
     int idx_ray = 0;
     std::thread *ThreadPool = new std::thread[total_threads];
     std::mutex thread_lock;
 
     //Write to each pixel (Array Index)
     for(int i = 0; i<total_threads; ++i){
-        ThreadPool[i] = std::thread(thread_trace_ray,globalTime,sensorproperties,disk_lattice_noise_points,num_lattice_points,FRAME_jet_lattice_noise_points, &idx_ray, &thread_lock, pixels_raw);
+        ThreadPool[i] = std::thread(thread_trace_ray, i, globalTime,sensorproperties, all_geodesics, geodesic_sizes, geodesics_k, disk_lattice_noise_points, num_lattice_points, FRAME_jet_lattice_noise_points, dynamic_noise_points, &idx_ray, &thread_lock, pixels_raw);
     }
 
     for(int i = 0; i<total_threads; ++i){

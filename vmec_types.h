@@ -1,6 +1,10 @@
 #pragma once
+
+#include "pch_vmec_primary.h"
+
 #include "vmec_defines.h"
 
+#pragma pack(push, 1)
 
 struct pix_RGB {
     unsigned char R;
@@ -12,6 +16,19 @@ struct pix_realNumber {
     realNumber R;
     realNumber G;
     realNumber B;
+};
+
+struct rgba_f32 {
+    f32 R;
+    f32 G;
+    f32 B;
+    f32 A;
+};
+
+struct pixel_f32 {
+    f32 R;
+    f32 G;
+    f32 B;
 };
 
 struct noise_point {
@@ -182,6 +199,8 @@ realNumber VectorLength(const Vector3& v1);
 
 realNumber VectorLength(const Vector4& v1);
 
+Vector3 VectorCross(const Vector3& v1, const Vector3& v2);
+
 Vector2 operator*(const Matrix2& M1, const Vector2& v1);
 
 Vector3 operator*(const Matrix3& M1, const Vector3& v1);
@@ -223,3 +242,5 @@ Matrix2 operator*(const Matrix2& M1, const Matrix2& M2);
 Matrix3 operator*(const Matrix3& M1, const Matrix3& M2);
 
 Matrix4 operator*(const Matrix4& M1, const Matrix4& M2);
+
+#pragma pack(pop)

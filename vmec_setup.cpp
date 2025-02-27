@@ -36,40 +36,45 @@ void generate_noise_points(int &num_disk_points, noise_point* &disk_noise_points
 
 
 //RNG Points Jet Lattice
-void generate_lattice_noise_points(int &num_lattice_points, lattice_noise_point* &lattice_noise_points){
+void generate_lattice_noise_points(int total_threads, int &num_lattice_points, lattice_noise_point* &lattice_noise_points, dynamic_lattice_point* &dynamic_noise_points){
 
 	int octaveIndices = 0;
 	num_lattice_points = 0;
 	num_lattice_points = settings.jet_noise_first_octave * std::pow(2,settings.jet_noise_octaves-1);
 
-   lattice_noise_points = allocate<lattice_noise_point>( num_lattice_points );
+	lattice_noise_points = allocate<lattice_noise_point>( num_lattice_points );
+	dynamic_noise_points = allocate<dynamic_lattice_point>( num_lattice_points * total_threads );
 
 	std::default_random_engine generator;
 	std::uniform_real_distribution<realNumber> r_dist(0.0,1.0);
 	std::uniform_real_distribution<realNumber> p_dist(0.0,2.0*M_PI);
 	std::uniform_real_distribution<realNumber> v_dist(-1.0,1.0);
 	std::uniform_real_distribution<realNumber> W_dist(0,M_PI_2);
-    std::uniform_real_distribution<realNumber> s_dist(1,-1);
+	std::uniform_real_distribution<realNumber> s_dist(-1,1);
 
 	for(int idx=0;idx<num_lattice_points;++idx)
-    {
+	{
 		lattice_noise_points[idx].r = (std::sqrt(r_dist(generator)) * settings.jet_radius_scale) + settings.jet_minor_radius;
 		lattice_noise_points[idx].p = p_dist(generator);
 		lattice_noise_points[idx].t = M_PI_2;
 		lattice_noise_points[idx].v = v_dist(generator);
 		lattice_noise_points[idx].W = W_dist(generator);
-        lattice_noise_points[idx].s = s_dist(generator);
+		lattice_noise_points[idx].s = s_dist(generator);
 	}
 }
 
 
-void do_setup(pix_realNumber* &pixels_raw, pix_RGB* &pixels_clean, int &num_lattice_points, lattice_noise_point* &lattice_noise_points, int &num_disk_points, noise_point* &disk_noise_points){
+void do_setup(int total_threads, pix_realNumber* &pixels_raw, pix_RGB* &pixels_clean, RayProperties* &all_geodesics, int* &geodesic_sizes, realNumber* &geodesics_k, int &num_lattice_points, lattice_noise_point* &lattice_noise_points, dynamic_lattice_point* &dynamic_noise_points, int &num_disk_points, noise_point* &disk_noise_points){
 
 	pixels_raw = allocate<pix_realNumber>( settings.image_height * settings.image_width );
 	pixels_clean = allocate<pix_RGB>( settings.image_height * settings.image_width );
 
+	all_geodesics = allocate<RayProperties>( total_threads * settings.integration_depth );
+	geodesic_sizes = allocate<int>( total_threads );
+	geodesics_k = allocate<realNumber>( total_threads * settings.integration_depth );;
+
 	//Jet Lattice points
-	generate_lattice_noise_points(num_lattice_points, lattice_noise_points);
+	generate_lattice_noise_points(total_threads, num_lattice_points, lattice_noise_points, dynamic_noise_points);
 
 	//noise points - sorted by r within each octave
 	generate_noise_points(num_disk_points, disk_noise_points);
@@ -77,12 +82,16 @@ void do_setup(pix_realNumber* &pixels_raw, pix_RGB* &pixels_clean, int &num_latt
 }
 
 
-void do_cleanup(pix_realNumber* &pixels_raw, pix_RGB* &pixels_clean, lattice_noise_point* &lattice_noise_points, noise_point* &disk_noise_points){
+void do_cleanup(pix_realNumber* &pixels_raw, pix_RGB* &pixels_clean, RayProperties* &all_geodesics, int* &geodesic_sizes, realNumber* &geodesics_k, lattice_noise_point* &lattice_noise_points, dynamic_lattice_point* &dynamic_noise_points, noise_point* &disk_noise_points){
 
 	//Free Memory
 	free(pixels_raw);
 	free(pixels_clean);
+	free(all_geodesics);
+	free(geodesic_sizes);
+	free(geodesics_k);
 	free(lattice_noise_points);
+	free(dynamic_noise_points);
 	free(disk_noise_points);
 
 }

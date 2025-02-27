@@ -3,6 +3,7 @@
 
 // Basic functionality headers
 #include <cstdint>
+#include <filesystem>
 
 /**
    These are a collection of macros that provide code search hints, build system
@@ -117,9 +118,9 @@ using fbyte = u8;
 
 // String types
 using fstring = std::basic_string<char>;
-using fstring_view = std::basic_string_view<char>;
+// using fstring_view = std::basic_string_view<char>;
 using cstring = const char*;
-// using fpath = const char*;
+using fpath = std::filesystem::path;
 
 // -- More complex Stuff --
 #define INVOKE_MEMBER(object, function, ...) ((object).*(function))(__VA_ARGS__)
