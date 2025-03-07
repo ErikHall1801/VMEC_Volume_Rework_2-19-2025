@@ -34,114 +34,99 @@ static void traverseSearch(int startIndex, int endIndex, float target_low, float
 //Distance between Sample and disk lattice point
 static Vector3 evaluateDiskLatticePoint(const realNumber globalTime, const int i, const Vector3 &sPos, noise_point* disk_lattice_noise_points, const realNumber &t, const realNumber &r, const realNumber &theta)
 {
-    Vector4 diskLatticePoint;
+    Vector3 diskLatticePoint;
     diskLatticePoint.x = disk_lattice_noise_points[i].r;
     diskLatticePoint.y = disk_lattice_noise_points[i].t;
     diskLatticePoint.z = disk_lattice_noise_points[i].p;
-    diskLatticePoint.t = disk_lattice_noise_points[i].v;
 
     Vector3 uVelPoint, xPos;
     realNumber gamma, angularDisplacement, dr, dtheta, dphi, sampleDistance;        
-    dr = diskLatticePoint.x * settings.disk_lattice_major_radius + settings.disk_lattice_minimum_radius;
-            
+    dr = (diskLatticePoint.x * settings.disk_lattice_major_radius) + settings.disk_lattice_minimum_radius;
+
     uVelPoint.set(0.0,0.0,uPhi(dr));
     gamma = generalizedTimeDilationFactor(r, theta, uVelPoint, -1.0);
-    angularDisplacement = (globalTime - (t/gamma)) * -uVelPoint.z * sign(settings.a);        
+    angularDisplacement = (globalTime - (t/gamma)) * uVelPoint.z * sign(settings.a);        
     dtheta = (diskLatticePoint.y * settings.disk_lattice_vertical_scale) + (M_PI/2.0);
     dphi = diskLatticePoint.z + angularDisplacement;
-            
+
     return sphericalToCartesian(dr, dtheta, dphi);
 }
 
 
 //Vortex Noise algorithm
-static Vector3 vortexNoise(const realNumber globalTime, const Vector3& rayOrig, int octaves, int sizeFirstOctave, noise_point* disk_lattice_noise_points, realNumber previousValue, realNumber t, realNumber r, realNumber theta, realNumber phi, realNumber dx)
+static Vector3 vortexNoise(const realNumber &globalTime, const Vector3 &rayOrig, noise_point* disk_lattice_noise_points, const realNumber &previousValue, const realNumber &t, const realNumber &r, const realNumber &theta, const realNumber &phi, const realNumber &dx)
 {
-    Vector4 pointData;
-    Vector3 xPos, xPosDot, sPos, sPosDot, uVelPoints, out;
-    realNumber gamma, initialAngularDisplacement, constWeight = 0.0, variableWeight = 0.0, vWeight = 0.0, cWeight = 0.0, vValue = 0.0, cValue = 0.0, vortexNoiseValue = 0.0, constantVortexNoiseValue = 0.0, vortexNoiseDerivative = 0.0, NthHarmonic = 0.0, angularDisplacement = 0.0, dr, dtheta, dphi;
+    Vector3
+        xPos,
+        xPosDot,
+        sPos,
+        sPosDot,
+        out;
+    
+    realNumber
+        X = 0.0,
+        octave_decay = 0.3,
+        initialAngularDisplacement,
+        constWeight = 0.0,
+        variableWeight = 0.0,
+        vWeight = 0.0,
+        cWeight = 0.0,
+        vValue = 0.0,
+        cValue = 0.0,
+        vortexNoiseValue = 0.0,
+        constantVortexNoiseValue =0.0,
+        vortexNoiseDerivative = 0.0,
+        NthHarmonic = 0.0;
 
+    int
+        octaveIndices = 0,
+        octaveStart = 0,
+        octaveEnd = 0,
+        o,
+        g;
 
-    //SPT
+    //SPT - Sample-Position-Transform, defines the Bokeh Noise structure
     sPos = rayOrig;
-    sPos.y = sPos.y * 3.0;
-    initialAngularDisplacement = std::sqrt(1.0 / ((r+3.0) * (r+3.0))) * -sign(settings.a) * 156.0;
+    //sPos.y = sPos.y * 3.0;
+    initialAngularDisplacement = std::sqrt(1.0 / ((r+3.0) * (r+3.0))) * sign(settings.a) * 72.0;
     sPos = rotate2D(sPos, initialAngularDisplacement);
-    sPosDot.x = sPos.x;
-    sPosDot.y = 0.0;
-    sPosDot.z = sPos.z;
-
-    //Temp
-    realNumber diskSize = 93.0;
-    realNumber animationScale = 10.0;
-    realNumber lightTravelDelayExaggeration = 1.0;
-    realNumber weightThreshold = 0.000000000001;
-    realNumber maxWidth = 0.0;
-    realNumber lowerBound, upperBound;
-    int octaveIndices = 0, octaveStart = 0, octaveEnd = 0, i_start = octaveStart, i_end = octaveEnd;
+    sPosDot.set(sPos.x,0.0,sPos.z);
 
     //For # octaves
-    for(int o = 0; o < octaves; o++)
+    for(o = 0; o < settings.disk_noise_octaves; o++)
     {
         vWeight = 0.0; cWeight = 0.0; vValue = 0.0; cValue = 0.0;
-        octaveIndices = sizeFirstOctave*std::pow(2,o);
+        octaveIndices = settings.disk_noise_size_first_octave*std::pow(2,o);
         octaveStart = octaveEnd;
         octaveEnd = octaveStart+octaveIndices;
 
-        maxWidth = std::pow(1.0/weightThreshold,1.0/(2.0+o)) / 120.0;
-        lowerBound = std::max(((r-1.0)/120.0)-maxWidth,0.0);
-        upperBound = std::min(((r-1.0)/120.0)+maxWidth,1.0);
-
-        traverseSearch(octaveStart, octaveEnd, lowerBound, upperBound, &i_start, &i_end, disk_lattice_noise_points);
-
         //for # points in octave within the lower and upper bound
-        for(int g = i_start; g < i_end; g++)
+        for(g = octaveStart; g < octaveEnd; g++)
         {
-            pointData.x = disk_lattice_noise_points[g].r;
-            pointData.y = disk_lattice_noise_points[g].t;
-            pointData.z = disk_lattice_noise_points[g].p;
-            pointData.t = disk_lattice_noise_points[g].v;
+            X = disk_lattice_noise_points[g].v;
 
-            dr = pointData.x * diskSize + 3.0;
+            xPos = evaluateDiskLatticePoint(globalTime,g,sPos,disk_lattice_noise_points,t,r,theta);
+            xPosDot.set(xPos.x,0.0,xPos.z);
 
-            uVelPoints.x = 0.0;
-            uVelPoints.y = 0.0;
-            uVelPoints.z = uPhi(dr)* lightTravelDelayExaggeration;
-            gamma = generalizedTimeDilationFactor(r, theta,uVelPoints, -1.0);
-            angularDisplacement = ((globalTime*animationScale) - (t/gamma)) * -uVelPoints.z * sign(settings.a);
+            variableWeight = std::pow(std::exp(-euclidianDistance(xPos,sPos)*octave_decay),o+1);
+            constWeight = std::pow(std::exp(-euclidianDistance(xPosDot,sPosDot)*octave_decay),o+1);
 
-            dtheta = (pointData.y * 0.267) + (M_PI/2.0); //0.267 is a scale such that all points are within the boudning region, this should be functionalized
-            dphi = pointData.z + angularDisplacement;
-
-            xPos = sphericalToCartesian(dr, dtheta, dphi); //XYZ with Y up
-            xPosDot.x = xPos.x;
-            xPosDot.y = 0.0;
-            xPosDot.z = xPos.z;
-
-            variableWeight = 1.0 / std::pow(euclidianDistance2(xPos,sPos),(2.0+o)/2.0);
-
-            if(variableWeight > weightThreshold);
-            {
-                constWeight = 1.0 / std::pow(euclidianDistance2(xPosDot,sPosDot),(2.0+o)/2.0);
-
-                vWeight += variableWeight;
-                cWeight += constWeight;
-                vValue += pointData.t*variableWeight;
-                cValue += pointData.t*constWeight;
-            }
+            vWeight += variableWeight;
+            cWeight += constWeight;
+            vValue += X*variableWeight;
+            cValue += X*constWeight;
         }
 
         vortexNoiseValue += (vValue/vWeight)*(1.0/static_cast<realNumber>(o+1.0));
-        constantVortexNoiseValue += (cValue/cWeight)*(1.0f/static_cast<realNumber>(o+1.0));
+        constantVortexNoiseValue += (cValue/cWeight)*(1.0/static_cast<realNumber>(o+1.0));
         NthHarmonic += 1.0/static_cast<realNumber>(o+1);
     }
 
     vortexNoiseValue /= NthHarmonic;
+    vortexNoiseValue = std::pow((vortexNoiseValue + 1.0) / 2.0,5.0);
     constantVortexNoiseValue /= NthHarmonic;
     vortexNoiseDerivative = (vortexNoiseValue - previousValue) / dx;
-    out.x = vortexNoiseValue;
-    out.y = constantVortexNoiseValue;
-    out.z = vortexNoiseDerivative;
+    out.set(vortexNoiseValue,constantVortexNoiseValue,vortexNoiseDerivative);
     return out;
 }
 
@@ -279,13 +264,22 @@ static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumb
 {
     //Variable declaration
     bool 
-        break_tag = false;
+        break_tag = false,
+        bv_condition = false;
     
     int
         i;
 
     realNumber
-        hStep = 1e-3;
+        hStep = 1e-3,
+        t = 0.0,
+        dt = 0.5,
+        t_max = 1.0;
+
+    Vector3
+        p0,
+        p1,
+        dir;
 
     localProperties
         pointProperties = initializeCamera(rayOrig,rayMomentum);
@@ -302,6 +296,8 @@ static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumb
         k_current = 0.0_real;
 
     geodesic_size = 0;
+
+    if(settings.bv_disk_toggle || settings.bv_jet_toggle || settings.bv_ambient_medium_toggle || settings.vis_disk_BV || settings.vis_jet_BV || settings.vis_ambient_BV) { bv_condition = true; }
 
     //Geodesic Integration
     for(i = 0; i < settings.integration_depth; i++)
@@ -323,33 +319,47 @@ static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumb
             break_tag = true;
         }
 
-        //In-bounding region check
-        pointInBounds(BoundingVolumes,pathProperties.r,pathProperties.theta);
-
-        if(BoundingVolumes.disk && !hit_disk)
-        {
-            i_hit_disk = i;
-            hit_disk = true;
-        }
-        if(BoundingVolumes.jet && !hit_jet)
-        {
-            i_hit_jet = i;
-            hit_jet = true;
-        }
-        if(BoundingVolumes.ambient && !hit_ambient)
-        {
-            i_hit_ambient = i;
-            hit_ambient = true;
-        }
-
         //Update Array
         geodesic[i] = pathProperties;
+        p0 = BoyerLindquistToCartesian(pathProperties.r,pathProperties.theta,pathProperties.phi);
         geodesic_k[i] = k_current;
         ++geodesic_size;
 
         //March step
         pathProperties = rayRKF45(pathProperties);
-        k_current += euclidianDistance(BoyerLindquistToCartesian(geodesic[i].r,geodesic[i].theta,geodesic[i].phi),BoyerLindquistToCartesian(pathProperties.r,pathProperties.theta,pathProperties.phi));
+        p1 = BoyerLindquistToCartesian(pathProperties.r,pathProperties.theta,pathProperties.phi);
+        t_max = euclidianDistance(p0,p1);
+        dir = p1-p0;
+        dir = dir / VectorLength(dir);
+        k_current += t_max;
+
+        while(t_max > t && bv_condition)
+        {
+            p1 = p0 + dir*t;
+            t += dt;
+            p1 = cartesianToBL(p1);
+            
+            //In-bounding region check
+            pointInBounds(BoundingVolumes,p1.x,p1.y);
+
+            if(BoundingVolumes.disk && !hit_disk)
+            {
+                i_hit_disk = i;
+                hit_disk = true;
+            }
+            if(BoundingVolumes.jet && !hit_jet)
+            {
+                i_hit_jet = i;
+                hit_jet = true;
+            }
+            if(BoundingVolumes.ambient && !hit_ambient)
+            {
+                i_hit_ambient = i;
+                hit_ambient = true;
+            }
+        }
+
+        t = 0.0;
 
         if(break_tag)
         {
@@ -392,7 +402,10 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
         bool 
             hit_disk_lattice = false,
             hit_jet_lattice = false,
-            break_tag = false;
+            break_tag = false,
+            is_obstical = false,
+            is_EH = false,
+            hit_grid = false;
     
         int
             i = 0,
@@ -409,10 +422,12 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             k_intersect = 0.0,
             geodesic_length = 0.0,
             k = 0.0,
-            dk = 0.5;
+            dk = 0.5,
+            travel_time_noise_check = 0.0;
 
         Vector3
-            dir(rayDir.x,rayDir.y,rayDir.z), 
+            dir(rayDir.x,rayDir.y,rayDir.z),
+            dir0,
             p1(rayOrig.x,rayOrig.y,rayOrig.z),
             p0(0.0,0.0,0.0),
             backgroundCol(0.0,0.0,0.0),
@@ -420,7 +435,12 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             checkerDiskp0(0.0,0.0,0.0),
             pointPosition(0.0,0.0,0.0),
             hitDisk(0.0,0.0,0.0),
-            localVelocity(0.0,0.0,0.0);
+            hitPlane(0.0,0.0,0.0),
+            localVelocity(0.0,0.0,0.0),
+            vortex_Noise_debug(0.0,0.0,0.0),
+            hitDiskBL(0.0,0.0,0.0),
+            gird_col(0.0,0.0,0.0),
+            local_grid_size(5.0,5.0,5.0);
     
         Vector4
             initialU(geodesic[0].u0,geodesic[0].u1,geodesic[0].u2,geodesic[0].u3), 
@@ -428,6 +448,10 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
 
         RayProperties
             rayProperties;
+        
+        //Compute dir0
+        dir0 = BoyerLindquistToCartesian(geodesic[1].r,geodesic[1].theta,geodesic[1].phi)-BoyerLindquistToCartesian(geodesic[0].r,geodesic[0].theta,geodesic[0].phi);
+        dir0 = dir0/VectorLength(dir0);
 
     //Checker Disk test scene
     if(settings.test_scene)
@@ -440,6 +464,8 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             if(i == i_rs && !break_tag)
             {
                 break_tag = true;
+                is_EH = true;
+                is_obstical = true;
             }
 
             //Celestial Sphere
@@ -452,13 +478,15 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
                 }
 
                 RGBA_out.set(RGBA_out.x + backgroundCol.x , RGBA_out.y + backgroundCol.y , RGBA_out.z + backgroundCol.z , 0.0);
+                break_tag = true;
             }
 
             //Ray did not hit anything
             if(!ray_convergence && !break_tag)
             {
-                RGBA_out.set(1.0,1.0,1.0,1.0);
+                RGBA_out.set(1.0,0.0,1.0,0.0);
                 break_tag = true;
+                is_obstical = true;
             }
 
             //Checker Disk
@@ -478,13 +506,23 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
                 {
                     int idx_interp = 0;
                     rayProperties = interp_along_geodesic(k_intersect, geodesic, geodesic_size, geodesic_k, idx_interp);
-                    hitDisk = cartesianToBL(hitDisk);
-                    localVelocity.set(0.0,0.0,(uPhi(hitDisk.x)));
+                    hitDiskBL = cartesianToBL(hitDisk);
+                    localVelocity.set(0.0,0.0,(uPhi(hitDiskBL.x)));
                     redshift_factor = generalizedRedshiftFactor(rayProperties,camProperties,initialU,localVelocity);
                     RGBA_out.set(redshift_factor,redshift_factor,redshift_factor,0.0);
                 }
+                else if(settings.checker_disk_vortex_noise)
+                {
+                    int idx_interp = 0;
+                    rayProperties = interp_along_geodesic(k_intersect, geodesic, geodesic_size, geodesic_k, idx_interp);
+                    if(settings.checker_disk_vortex_noise_light_travel_delay) {travel_time_noise_check = rayProperties.t;}
+                    hitDiskBL = cartesianToBL(hitDisk); // ??? Why does the r coordinate have steps in it ?
+                    vortex_Noise_debug = vortexNoise(globalTime,hitDisk,disk_lattice_noise_points,0.0,travel_time_noise_check,hitDiskBL.x,rayProperties.theta,rayProperties.phi,1.0);
+                    RGBA_out.set(vortex_Noise_debug.x,vortex_Noise_debug.x,vortex_Noise_debug.x,0.0);
+                }
 
                 break_tag = true;
+                is_obstical = true;
             }
 
             //Break Condition
@@ -521,21 +559,6 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             initialize_per_RAY_lattice_points(num_lattice_points, RAY_jet_lattice_noise_points, FRAME_jet_lattice_noise_points);
         }
 
-        if(hit_disk && settings.bv_disk_toggle)
-        {
-            RGBA_out.x += 0.05;
-        }
-
-        if(hit_jet && settings.bv_jet_toggle)
-        {
-            RGBA_out.y += 0.05;
-        }
-
-        if(hit_ambient && settings.bv_ambient_medium_toggle)
-        {
-            RGBA_out.z += 0.05;
-        }
-
         geodesic_length = geodesic_k[geodesic_size-1];
 
         while(geodesic_length > k)
@@ -543,12 +566,14 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             //Lerp along stored geodesic and derive iterator
             rayProperties = interp_along_geodesic(k, geodesic, geodesic_size, geodesic_k, idx_interp);
             interp_idx = interp_find_index(k, geodesic_k, geodesic_size, interp_idx);
-            i = interp_idx;
+            i = interp_idx+1;
 
             //Event Horizon
             if(i >= i_rs && !break_tag)
             {
                 break_tag = true;
+                is_EH = true;
+                is_obstical = true;
             }
 
             //Celestial Sphere
@@ -561,13 +586,15 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
                 }
 
                 RGBA_out.set(RGBA_out.x + backgroundCol.x , RGBA_out.y + backgroundCol.y , RGBA_out.z + backgroundCol.z , 0.0);
+                break_tag = true;
             }
 
             //Ray did not hit anything
             if(!ray_convergence && !break_tag)
             {
-                RGBA_out.set(1.0,1.0,1.0,1.0);
+                RGBA_out.set(1.0,0.0,1.0,0.0);
                 break_tag = true;
+                is_obstical = true;
             }
 
             //Visualize Disk Points
@@ -581,6 +608,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
                         hit_disk_lattice = true;
                         hit_disk_ID = g;
                         break_tag = true;
+                        is_obstical = true;
                     }
                 }
 
@@ -604,6 +632,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
                         hit_jet_lattice = true;
                         hit_jet_ID = g;
                         break_tag = true;
+                        is_obstical = true;
                     }
                 }
 
@@ -644,6 +673,60 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             k += dk;
         }
     }
+
+    //World Grid
+    if(rayPlaneIntersection(checkerDiskNormal,checkerDiskp0,rayOrig,dir0,10000.0,hitPlane) && settings.world_grid && !is_obstical && !settings.world_gird_gravitational_lensing)
+    {
+        XZ_world_gird(rayOrig,hitPlane,gird_col,hit_grid);
+        RGBA_out.set(gird_col.x,gird_col.y,gird_col.z,0.0);
+    }
+
+    //Lensed World Gird
+    if(is_obstical && is_EH && settings.world_gird_ignore_shadow) {is_obstical = false; } //Ignore the Black Holes shadow
+
+    if(settings.world_gird_gravitational_lensing && !is_obstical)
+    {
+        p1.set(rayOrig.x,rayOrig.y,rayOrig.z);
+        p0 = p1;
+        dx = -1.0;
+        dir.set(rayDir.x,rayDir.y,rayDir.z);
+
+        for(i = 0; i < geodesic_size; i++)
+        {
+            rayProperties = geodesic[i];
+
+            if(rayPlaneIntersection(checkerDiskNormal,checkerDiskp0,p0,dir,dx,hitPlane))
+            {
+                XZ_world_gird(rayOrig,hitPlane,gird_col,hit_grid);
+                RGBA_out.set(gird_col.x,gird_col.y,gird_col.z,0.0);
+                if(hit_grid) {break;} else {hitPlane.set(10000.0,10000.0,10000.0); }
+            }
+
+            //Calculate dx
+            p0 = p1;
+            p1 = BoyerLindquistToCartesian(rayProperties.r,rayProperties.theta,rayProperties.phi);
+            dx = euclidianDistance(p0,p1);
+            dir = p1 - p0;
+            dir = dir / VectorLength(dir);
+        }
+    }
+
+    //Visualize Bouding Volumes
+    if(hit_disk && settings.vis_disk_BV)
+    {
+        RGBA_out.x += 0.05;
+    }
+
+    if(hit_jet && settings.vis_jet_BV)
+    {
+        RGBA_out.y += 0.05;
+    }
+
+    if(hit_ambient && settings.vis_ambient_BV)
+    {
+        RGBA_out.z += 0.05;
+    }
+
     return RGBA_out;
 }
 
@@ -654,24 +737,95 @@ static Vector4 vmec_magik_sandbox(const Vector3 rayOrig, const Vector3 rayDir)
     Vector4
         RGBA_out(0.0,0.0,0.0,0.0);
     
-    if(settings.magik_trivial_scene)
+    if(settings.magik_sandbox_trivial_scene)
     {
         Magik::trivial(RGBA_out,rayOrig,rayDir);
     }
-    else if(settings.magik_single_scene)
+    else if(settings.magik_sandbox_single_scene)
     {
         Magik::single(RGBA_out,rayOrig,rayDir);
     }
-    else if(settings.magik_single_MFP_scene)
+    else if(settings.magik_sandbox_muliple_scene)
     {
-        Magik::single_MFP(RGBA_out,rayOrig,rayDir);
-    }
-    else if(settings.magik_muliple_scene)
-    {
-        Magik::multiple();
+        Magik::multiple(RGBA_out,rayOrig,rayDir);
     }
 
     return RGBA_out;
+}
+
+
+//Magik
+static Vector4 vmec_magik()
+{
+    Vector4
+        RGBA_out(0.0,0.0,0.0,0.0);
+    
+    //Do Stuff
+
+    return RGBA_out;
+}
+
+
+//Debug, draw Geodesic
+static Vector4 output_geodesic(const realNumber &u, const realNumber &v, const SensorProperties sensorproperties, RayProperties* geodesic, int &geodesic_size, realNumber* geodesic_k)
+{
+    Vector3 fragmentCoords, camMomentum(settings.geo_ex_U1,settings.geo_ex_U2,settings.geo_ex_U3);
+    Vector3 rayOrig, rayDir(0.0,0.0,0.0);
+    Vector4 mRender(0.0,0.0,0.0,0.0);
+    Matrix3 M;
+
+    localProperties
+        camProperties;
+
+    bool
+        ray_convergence = true,
+        hit_disk = false,
+        hit_jet = false,
+        hit_ambient = false;
+
+    int 
+        i_rs = 0,
+        i_celestial_sphere = 0,
+        i_hit_disk = 0,
+        i_hit_jet = 0,
+        i_hit_ambient = 0;
+    
+    //Initialize Geodesic
+    if(settings.geo_ex_UV) //Initalization using Screenspace UVs
+    {
+        //This is all just copied from the pixel_function, because it is the exact same math. We just skip the array position to UV coordinates step
+        fragmentCoords.set(-u,v,0.0);
+        fragmentCoords = fragmentCoords * 0.001;
+        fragmentCoords = fragmentCoords * sensorproperties.SensorSize;
+
+        rayOrig.set(0.0,0.0,sensorproperties.FocalLength);
+        rayOrig = rayOrig + sensorproperties.camPos;
+        rayDir = (fragmentCoords + sensorproperties.camPos) - rayOrig;
+        rayDir = rayDir / VectorLength(rayDir);
+
+        M = rotateRay(sensorproperties.AngleX, sensorproperties.AngleY, sensorproperties.AngleZ);
+        rayDir = M*rayDir;
+
+        //I know this is bad but comon dude.
+        trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
+    }
+    else if(settings.geo_ex_ARBITRARY) //Initalization using arbitrary initial conditions
+    {
+        rayOrig.set(settings.geo_ex_Orig_X,settings.geo_ex_Orig_Y,settings.geo_ex_Orig_Z);
+        rayDir.set(settings.geo_ex_Dir_X,settings.geo_ex_Dir_Y,settings.geo_ex_Dir_Z);
+        rayDir = rayDir / VectorLength(rayDir);
+
+        //Orient camera
+        M = rotateRay(sensorproperties.AngleX, sensorproperties.AngleY, sensorproperties.AngleZ);
+        rayDir = M*rayDir;
+
+        trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
+    }
+
+    if(settings.geo_ex_export_interpolated)
+    {
+        //Sample and store new array of points with k being incrimented by geo_ex_interpolation_step each step
+    }
 }
 
 
@@ -722,16 +876,18 @@ static pix_realNumber pixel_function(const realNumber globalTime, int width, int
         M = rotateRay(sensorproperties.AngleX, sensorproperties.AngleY, sensorproperties.AngleZ);
         rayDir = M*rayDir;
 
-        //Accumulate results for Debugger
-        if(!settings.render_magik_sandbox && settings.render_debug)
+        //Accumulate results from renderers
+        if(settings.render_debug)
         {
             mRender = mRender + vmec_debugger(globalTime, rayOrig, rayDir, sensorproperties.camPos, sensorproperties.camMomentum, geodesic, geodesic_size, geodesic_k, disk_lattice_noise_points, num_lattice_points, FRAME_jet_lattice_noise_points, RAY_jet_lattice_noise_points);
         }
-
-        //Accumlate results for Sandbox
-        if(settings.render_magik_sandbox)
+        else if(settings.render_magik_sandbox)
         {
             mRender = mRender + vmec_magik_sandbox(rayOrig,rayDir);
+        }
+        else if(settings.render_magik)
+        {
+            mRender = mRender + vmec_magik();
         }
     }
 

@@ -76,6 +76,80 @@ bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &ray
 }
 
 
+//Ray-Plane Intersection
+bool rayPlaneIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &rayOrig, const Vector3 &rayDir, const realNumber &dx, Vector3 &hit)
+{
+    realNumber denom = dotProduct(n,rayDir);
+    Vector3 p010 = p0 - rayOrig;
+    realNumber t = dotProduct(p010,n) / denom;
+    if(t >= 0.0 && t <= dx)
+    {
+        hit = rayOrig + rayDir * t; //Intersection point
+        return true;
+    }
+    return false;
+}
+
+
+//Sub Grid
+void axis_aligned_gird(const Vector3 &rayOrig, const Vector3 &hit, Vector3 &col, const realNumber &grid_spacing, bool &hit_grid)
+{
+    bool is_grid = false, is_X = false, is_Z = false;
+    Vector3 modPos(std::abs(((std::fmod(std::abs(hit.x),grid_spacing)*(1.0/grid_spacing))-0.5)*2.0) , std::abs(((std::fmod(std::abs(hit.y),grid_spacing)*(1.0/grid_spacing))-0.5)*2.0) , std::abs(((std::fmod(std::abs(hit.z),grid_spacing)*(1.0/grid_spacing))-0.5)*2.0));
+    realNumber fade = 1.0, r = VectorLength(hit), grid_width = 0.0015, scale_width = (1.0-((grid_width*euclidianDistance(rayOrig,hit))/grid_spacing));
+
+    if(modPos.x > scale_width)
+    {
+        is_grid = true;
+        if(std::abs(hit.x) < scale_width) { is_X = true; }
+    }
+
+    if(modPos.z > scale_width)
+    {
+        is_grid = true;
+        if(std::abs(hit.z) < scale_width) { is_Z = true; }
+    }
+
+    if(is_grid)
+    {
+        hit_grid = true;
+
+        if(r >= (settings.celestial_sphere_radius*0.75))
+        {
+            fade = std::exp(-(r-settings.celestial_sphere_radius*0.75)*0.01);
+        }
+
+        if(is_X)
+        {
+            col.set(0.95*fade,0.1*fade,0.1*fade);
+        }
+        else if(is_Z)
+        {
+            col.set(0.1*fade,0.95*fade,0.1*fade);
+        }
+        else
+        {
+            col.set(0.05*fade,0.05*fade,0.05*fade);
+        }
+    }
+}
+
+
+//XZ Gird
+void XZ_world_gird(const Vector3 &rayOrig, const Vector3 &hit, Vector3 &col, bool &hit_grid)
+{
+    //Check main grid
+    axis_aligned_gird(rayOrig,hit,col,settings.grid_spacing_major,hit_grid);
+    
+    //Check minor grid
+    if(!hit_grid)
+    {
+        axis_aligned_gird(rayOrig,hit,col,settings.grid_spacing_minor,hit_grid);
+        col = col * std::exp(-std::abs(rayOrig.y)*0.015)*0.5;
+    }
+}
+
+
 //Ray-Sphere Intersection
 bool raySphereIntersection(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &pos, const realNumber &radius, const realNumber &dx)
 {
@@ -138,24 +212,10 @@ bool intersectAABB(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 
 }
 
 
-//Step along ray for lattice points
-bool stepBetweenGeodesic(const int &max, const Vector3 &startPos, const Vector3 &dir, const Vector3 &targetPos, const realNumber &dx, const realNumber &minDist)
-{
-    realNumber d;
-    for(int i = 0; i < max; i++)
-    {
-        d = euclidianDistance(startPos + (dir*(dx/realNumber(max))*realNumber(i)),targetPos);
-        if(d < minDist) return true;
-    }
-
-    return false;
-}
-
-
 //RNG
+    static std::default_random_engine rng;
     realNumber nrandom()
     {
-        static std::default_random_engine rng;
         std::uniform_real_distribution<double> dist(0.0,1.0);
         return dist(rng);
     }
@@ -447,7 +507,7 @@ RayProperties initializeRay(const Vector3& rayOrig, const Vector3& rayDir, const
 void pointInBounds(BVObjects& BoundingVolumes, const realNumber& r, const realNumber& theta)
 {
     //Accretion disk Case
-    if(settings.bv_disk_toggle && std::sqrt(r*r + settings.a*settings.a)*std::sin(theta) < settings.bv_disk_major_radius && std::sqrt(r*r + settings.a*settings.a)*std::sin(theta) > settings.bv_disk_minor_radius && std::abs(r*std::cos(theta)) < std::tan(settings.bv_disk_mean_slope * (M_PI/180.0))*(r+settings.bv_disk_radius_offset))
+    if((settings.bv_disk_toggle || settings.vis_disk_BV) && std::sqrt(r*r + settings.a*settings.a)*std::sin(theta) < settings.bv_disk_major_radius && std::sqrt(r*r + settings.a*settings.a)*std::sin(theta) > settings.bv_disk_minor_radius && std::abs(r*std::cos(theta)) < std::tan(settings.bv_disk_mean_slope * (M_PI/180.0))*(r+settings.bv_disk_radius_offset))
     {
         BoundingVolumes.disk = true;
     }
@@ -457,7 +517,7 @@ void pointInBounds(BVObjects& BoundingVolumes, const realNumber& r, const realNu
     }
 
     //Astrophysical Jet case
-    if(settings.bv_jet_toggle && std::abs(r*std::cos(theta)) < settings.bv_jet_height && sqrt(r*r + settings.a*settings.a)*std::sin(theta)-settings.bv_jet_minor_radius < std::abs(r*std::cos(theta))*std::tan(settings.bv_jet_deflection*(M_PI/180.0)))
+    if((settings.bv_jet_toggle || settings.vis_jet_BV) && std::abs(r*std::cos(theta)) < settings.bv_jet_height && sqrt(r*r + settings.a*settings.a)*std::sin(theta)-settings.bv_jet_minor_radius < std::abs(r*std::cos(theta))*std::tan(settings.bv_jet_deflection*(M_PI/180.0)))
     {
         BoundingVolumes.jet = true;
     }
@@ -467,7 +527,7 @@ void pointInBounds(BVObjects& BoundingVolumes, const realNumber& r, const realNu
     }
 
     //Ambient Medium case
-    if(settings.bv_ambient_medium_toggle && r < settings.bv_ambient_medium_radius)
+    if((settings.bv_ambient_medium_toggle || settings.vis_ambient_BV) && r < settings.bv_ambient_medium_radius)
     {
         BoundingVolumes.ambient = true;
     }

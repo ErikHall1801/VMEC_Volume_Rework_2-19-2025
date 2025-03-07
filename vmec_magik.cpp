@@ -4,64 +4,12 @@
 
 namespace vmec
 {
-    /*
-
-    Couple of thoughts before we begin.
-
-    There are a couple of considerations regarding the translation from flat to curved spacetime. The Pixar paper implicitly assumes flat spatial geometry. 
-
-    The most immediate matter is that of the geodesic itself. The geodesic is not straight in Cartesian coordinates, so would the phase function apply between steps ?
-    I dont think it should, because the geodesic is a straight line in the physical sense. So Magik should threat the entire geodesic as a continues straight line.
-
-    To make sure everything does its job, we will need a couple of debug tools specifically for Magik. 
-        For instance, a tool that calculates the divergence between Geodesic and light path. That is, some way of determining how much the geodesic and path walked by Magik overlap
-        Ideally it is 1:1, but if we have any fault in our logic a value other than 1 implies that. 
-        One way to do this is to divide the final euclidian lengths. The geodesic and lightpath should have the exact same length. Well, not exact same length. But close to it. 
-
-    Regarding the syntax; Its m_ for functions from this file
-
-    Lets write it out
-
-    L = direct_radiance + incoming_radiance;
-            direct_radiance = integral_t_d( T(t)*sigma_a(x_t)*L_e(x_t,w)*dt )
-            incoming_radiance = integral_t_d( T(t)*sigma_s(x_t)*L_s(x_t,w)*dt )
-
-        where;
-            T(t) = exp(-sigma_t(x_t)*dt)
-            sigma_t(x_t) = sigma_a(x_t) + sigma_s(x_t)
-            L_e(x_t,w) = Emission at position, invarient of direction
-            L_s(x_t,w) = integral_S²( fp(x,w,w´)*L(x,w)*dw )
-                L(x,w)
-                    For Single Scattering;   L(x,w) = direct_radiance (where w is towards the light source(s))
-                    For Multiple Scattering; L(x,w) = integral_t_MFPL(x_t)( direct_radiance ) (Where the integral runs for N scatter events and the direction changes according to the BSDF each time)
-                        MFPL(x_t) = 1.0 / sigma_t(x);
-
-    Lets consider what trivial, singel and multiple are supposed to do, which parts of the L equation above do they solve ? 
-
-    trivial; L = direct_radiance // For the case where -> integral_t_d( T(t)*sigma_a(x_t)*L_e(x_t,w)*dt )
-    single; L = direct_radiance + incoming_radiance // For the case of only one scatter event towards a descrete, point, light source
-    multiple; L = direct_radiance + incoming_radiance //
-
-    Note; T(), sigma_t(), sigma_s() and sigma_a() are not floats, they are colors
-        So T(t) for instance is actually
-        T(t) = (exp(-sigma_t.x(x_t)*dt) , exp(-sigma_t.y(x_t)*dt) , exp(-sigma_t.z(x_t)*dt))
-
-    It is important to keep these functions organized. We use m_ for Magik, well what about mT_ for "Magik Trivial", mS_ "Magik Single", mM "Magik Multiple" and then mMR (Magik Multiple Relativistic)
-        So; mT_T(t), mT_sigma_t(), mT_sigma_s(), mT_sigma_a()
-        and then later
-            mMR_T(t) . . . mMR_sigma_a()
-
-    Another thing to consider is that the sigma_a and sigma_s functions will be identical for all sandbox cases. Just the mandelbulb plus some emissive sphere.
-    So its probably best if this one function, void, just returns 3 values, scatter, absorption and emission.
-
-    */
-
     //Sandbox Scene Specific functions
         //trivial sandbox - direct radiance only
         void m_sandbox_trivial(Vector3 &L, const Vector3 &p0, const Vector3 &p1, const realNumber &dx)
         {
             realNumber s = euclidianDistance(p0,p1), k = 0.0;
-            Vector3 x0 = p0, w = (p1-p0) / VectorLength(p1-p0), x1 = p0, BL;
+            Vector3 x0 = p0, w = (p1-p0) / VectorLength(p1-p0), x1 = p0, BL,floating_majorant;
             int n_steps = int(s/dx);
             realNumber fractionaldx = (s - realNumber(n_steps*dx))*dx;
 
@@ -76,7 +24,7 @@ namespace vmec
                 }
 
                 //Volume Sample
-                m_sandbox_volume(x1,sigma_a,sigma_s,sigma_t,L_e);
+                m_sandbox_volume(x1,sigma_a,sigma_s,sigma_t,L_e,floating_majorant);
 
                 //Transmittance in Interval
                 T.set(std::exp(-sigma_t.x*dx) * T.x , std::exp(-sigma_t.y*dx) * T.y , std::exp(-sigma_t.z*dx) * T.z);
@@ -88,117 +36,23 @@ namespace vmec
             }
         }
 
-        //Single scattering (direct + single indreict radiance) - Constant dx
-            //single sandbox - direct + single indirect radiance
-            void m_sandbox_single(Vector3 &L, const Vector3 &p0, const Vector3 &p1, const Vector3 &w0, const realNumber &dx)
-            {
-                realNumber s = euclidianDistance(p0,p1), k = 0.0;
-                Vector3 x0 = p0, w = (p1-p0) / VectorLength(p1-p0), x1 = p0, BL;
-                int n_steps = int(s/dx);
-                realNumber fractionaldx = (s - realNumber(n_steps*dx))*dx;
-
-                Vector3 T(1.0,1.0,1.0), sigma_a(0.0,0.0,0.0), sigma_s(0.0,0.0,0.0), sigma_t(0.0,0.0,0.0), L_e(0.0,0.0,0.0), L_s(0.0,0.0,0.0), direct_radiance(0.0,0.0,0.0), indirect_single_radiance(0.0,0.0,0.0);
-
-                //L = direct_radiance + incoming_single_radiance;
-                //incoming_single_radiance = integral_t_d( T(t)*sigma_s(x_t)*L_s(x_t,w)*dt )
-                //L_s(x_t,w) = integral_S²( fp(x,w,w´)*L(x,w)*dw )
-
-                for(int i = 0; i <= n_steps; i++)
-                {
-                    k = realNumber(i)*dx;
-                    if(i == n_steps)
-                    {
-                        k += fractionaldx;
-                    }
-
-                    //Volume Sample
-                    m_sandbox_volume(x1,sigma_a,sigma_s,sigma_t,L_e);
-
-                    //Transmittance in Interval
-                    T.set(std::exp(-sigma_t.x*dx) * T.x , std::exp(-sigma_t.y*dx) * T.y , std::exp(-sigma_t.z*dx) * T.z);
-
-                    //Direct Radiance
-                    direct_radiance.set( (T.x * sigma_a.x * L_e.x * dx) , (T.y * sigma_a.y * L_e.y * dx) , (T.z * sigma_a.z * L_e.z * dx) );
-
-                    //Indirect Single Radiance
-                    m_sandbox_single_scatter_ray(L_s,x1,w0,0.1);
-                    indirect_single_radiance.set( (T.x * sigma_s.x * L_s.x * dx) , (T.y * sigma_s.y * L_s.y * dx) , (T.z * sigma_s.z * L_s.z * dx) );
-
-                    //Total Radiance 
-                    L.set(L.x + direct_radiance.x + indirect_single_radiance.x , L.y + direct_radiance.y + indirect_single_radiance.y , L.z + direct_radiance.z + indirect_single_radiance.z);
-
-                    x1 = x0 + w*k;
-                }
-            }
-
-            //Evaluate Single scatter event
-            void m_sandbox_single_scatter_ray(Vector3 &L_s, const Vector3 &x_s, const Vector3 &w_s, const realNumber &ds)
-            {
-                //L_s(x_t,w) = integral_S( fp(x,w,w´)*L(x,w)*dw )
-                
-                int n_steps = 0;
-                realNumber cosTheta = 0.0, s = 0.0, k = 0.0, pdf = 0.0;
-                Vector3 x_t = x_s, x_e(0.0,0.0,0.0), w_e(0.0,0.0,0.0), light_col(0.0,0.0,0.0); //_e means "end", whereas _s means "start"
-                //m_point_light(x_e,light_col);
-                m_directional_light(x_s,x_e,light_col);
-
-                //Compute Scatter direction (w_e) and Angle (cosTheta)
-                w_e = x_e - x_s;
-                w_e = w_e / VectorLength(w_e);
-                cosTheta = dotProduct(w_e,w_s);
-
-                //Compute travel length and steps
-                s = euclidianDistance(x_e,x_s);
-                n_steps = int(s / ds);
-
-                //Declare scatter variables
-                Vector3 T(1.0,1.0,1.0), sigma_a(0.0,0.0,0.0), sigma_s(0.0,0.0,0.0), sigma_t(0.0,0.0,0.0), L_e(0.0,0.0,0.0), direct_radiance(0.0,0.0,0.0);
-
-                //Scatter
-                for(int i = 0; i <= n_steps; i++)
-                {
-                    k = realNumber(i)*ds;
-
-                    //Volume Sample
-                    m_sandbox_volume(x_t,sigma_a,sigma_s,sigma_t,L_e);
-
-                    //Transmittance along ray
-                    T.set(std::exp(-sigma_t.x*ds) * T.x , std::exp(-sigma_t.y*ds) * T.y , std::exp(-sigma_t.z*ds) * T.z);
-
-                    //Accumilate Direct Radiance
-                    direct_radiance.set( direct_radiance.x + (T.x * sigma_a.x * L_e.x * ds) , direct_radiance.y + (T.y * sigma_a.y * L_e.y * ds) , direct_radiance.z + (T.z * sigma_a.z * L_e.z * ds) );
-
-                    x_t = x_s + w_e*k;
-                }
-
-                //Add Directional light
-                direct_radiance.set( direct_radiance.x + (light_col.x*T.x) , direct_radiance.y + (light_col.y*T.y), direct_radiance.z + (light_col.z*T.z) );
-
-                //m_Isotropic_Phase_BSDF(pdf);
-                m_Anisotropic_Phase_BSDF(pdf,0.7,cosTheta);
-                L_s = direct_radiance*pdf;
-            }
-
         //Single scattering (direct + single indirect radiance) - Mean Free Path dx
             //single scattering
-            void m_sandbox_single_MFP(Vector3 &L, const Vector3 &p0, const Vector3 &p1, const Vector3 &w0)
+            void m_sandbox_single(Vector3 &L, const Vector3 &p0, const Vector3 &p1, const Vector3 &w0)
             {
                 bool track_back = false;
-                realNumber s = euclidianDistance(p0,p1), k = 0.0, dx = 0.0, dx_base = 0.15, dx_scale = 0.0, T_max = 1.0;
-                Vector3 x0 = p0, w = (p1-p0) / VectorLength(p1-p0), x1 = p0, BL;
+                realNumber s = euclidianDistance(p0,p1), k = 0.0, dx = 0.15;
+                Vector3 x0 = p0, w = (p1-p0) / VectorLength(p1-p0), x1 = p0, BL,floating_majorant;
 
                 Vector3 T(1.0,1.0,1.0), T_estimate(1.0,1.0,1.0), simga_t_old(0.0,0.0,0.0), sigma_a(0.0,0.0,0.0), sigma_s(0.0,0.0,0.0), sigma_t(0.0,0.0,0.0), L_e(0.0,0.0,0.0), L_s(0.0,0.0,0.0), direct_radiance(0.0,0.0,0.0), indirect_single_radiance(0.0,0.0,0.0);
 
                 while(s >= k)
                 {
                     //Volume Sample
-                    m_sandbox_volume(x1,sigma_a,sigma_s,sigma_t,L_e);
+                    m_sandbox_volume(x1,sigma_a,sigma_s,sigma_t,L_e,floating_majorant);
                     
-                    //Determine dx
-                    T_max = std::max(std::max(T.x,T.y),T.z);
-                    dx_scale = (dx_base + ((1.0-T_max)*(1.0-T_max)*(1.0-T_max)));
-                    dx = dx_scale + ((nrandom()-0.5) * dx_scale);
-                    k += dx;
+                    //Parameter along path
+                    k += (dx + (nrandom()-0.5)*(dx/4.0));
 
                     //Transmittance in Interval
                     T.set(std::exp(-sigma_t.x*dx) * T.x , std::exp(-sigma_t.y*dx) * T.y , std::exp(-sigma_t.z*dx) * T.z);
@@ -207,7 +61,7 @@ namespace vmec
                     direct_radiance.set( (T.x * sigma_a.x * L_e.x * dx) , (T.y * sigma_a.y * L_e.y * dx) , (T.z * sigma_a.z * L_e.z * dx) );
 
                     //Indirect Single Radiance
-                    m_sandbox_single_scatter_ray_MFP(L_s,x1,w0);
+                    m_sandbox_single_scatter_ray(L_s,x1,w0);
                     indirect_single_radiance.set( (T.x * sigma_s.x * L_s.x * dx) , (T.y * sigma_s.y * L_s.y * dx) , (T.z * sigma_s.z * L_s.z * dx) );
 
                     //Total Radiance 
@@ -218,13 +72,13 @@ namespace vmec
             }
 
             //evaluate single scatter event
-            void m_sandbox_single_scatter_ray_MFP(Vector3 &L_s, const Vector3 &x_s, const Vector3 &w_s)
+            void m_sandbox_single_scatter_ray(Vector3 &L_s, const Vector3 &x_s, const Vector3 &w_s)
             {
                 //L_s(x_t,w) = integral_S( fp(x,w,w´)*L(x,w)*dw )
                 
                 bool track_back = false;
-                realNumber cosTheta = 0.0, s = 0.0, k = 0.0, pdf = 0.0, ds = 0.0, ds_base = 0.15, ds_scale = 0.0, T_max = 1.0;
-                Vector3 x_t = x_s, x_e(0.0,0.0,0.0), w_e(0.0,0.0,0.0), light_col(0.0,0.0,0.0); //_e means "end", whereas _s means "start"
+                realNumber cosTheta = 0.0, s = 0.0, k = 0.0, pdf = 0.0, ds = 0.15;
+                Vector3 x_t = x_s, x_e(0.0,0.0,0.0), w_e(0.0,0.0,0.0), light_col(0.0,0.0,0.0),floating_majorant; //_e means "end", whereas _s means "start"
                 //m_point_light(x_e,light_col);
                 m_directional_light(x_s,x_e,light_col);
 
@@ -243,13 +97,10 @@ namespace vmec
                 while(s >= k)
                 {
                     //Volume Sample
-                    m_sandbox_volume(x_t,sigma_a,sigma_s,sigma_t,L_e);
+                    m_sandbox_volume(x_t,sigma_a,sigma_s,sigma_t,L_e,floating_majorant);
 
-                    //Determine dx
-                    T_max = std::max(std::max(T.x,T.y),T.z);
-                    ds_scale = (ds_base + ((1.0-T_max)*(1.0-T_max)*(1.0-T_max)));
-                    ds = ds_scale + ((nrandom()-0.5) * ds_scale);
-                    k += ds;
+                    //Parameter along Path
+                    k += (ds + (nrandom()-0.5)*(ds/4.0));
 
                     //Transmittance along ray
                     T.set(std::exp(-sigma_t.x*ds) * T.x , std::exp(-sigma_t.y*ds) * T.y , std::exp(-sigma_t.z*ds) * T.z);
@@ -265,36 +116,77 @@ namespace vmec
 
                 //m_Isotropic_Phase_BSDF(pdf);
                 m_Anisotropic_Phase_BSDF(pdf,0.7,cosTheta);
+                //m_Mie_Phase_BSDF(pdf,5.0,cosTheta);
                 L_s = direct_radiance*pdf;
             }
-
-            //Transmittance Estimator
-            void m_sandbox_estimate_transmittance(Vector3 &T, const Vector3 &x_s, const Vector3 &x_e, const Vector3 &w0)
+        
+        //Multiple Scattering - Null Collision
+            //Null Collision
+            void m_sandbox_trace_null_collision_ray(Vector3 &L, const Vector3 &x0, const Vector3 &w0, const Vector3 &AABB_min, const Vector3 &AABB_max, realNumber &running_majorant)
             {
-                realNumber s = euclidianDistance(x_s,x_e), dx_scale = 1.0, dx = 0.0, k = 0.0;
-                Vector3 x0 = x_s, x1(0.0,0.0,0.0), sigma_a(0.0,0.0,0.0), sigma_s(0.0,0.0,0.0), sigma_t(0.0,0.0,0.0), L_e(0.0,0.0,0.0);
-
-                while(s >= k)
+                for(int i = 0; i <= 2; i++)
                 {
-                    //Volume Sample
-                    m_sandbox_volume(x1,sigma_a,sigma_s,sigma_t,L_e);
-
-                    //Step size
-                    dx = ((nrandom() - 0.5) * (dx_scale/2.0)) + dx_scale;
-                    k += dx;
-
-                    //Transmittance along ray
-                    T.set(std::exp(-sigma_t.x*dx) * T.x , std::exp(-sigma_t.y*dx) * T.y , std::exp(-sigma_t.z*dx) * T.z);
-
-                    x1 = x0 + w0*k;
+                    int depth = 0;
+                    realNumber xi, t, multiplier = 1.0, P_e, P_s, P_n, majorant = 1.05, g = 0.7, pdf = 1.0, costheta;
+                    Vector3 xt = x0, wt = w0, w_temp, sigma_a, sigma_s, sigma_t, sigma_n, L_e, L_s(0.0,0.0,0.0), floating_majorant;
+    
+                    while(settings.magik_sandbox_multiple_scatter_events > depth)
+                    {
+                        //Random Number
+                        xi = nrandom();
+    
+                        //Parameter along Path from distribution
+                        t = -std::log(1.0-xi)/majorant;
+    
+                        //Realization sample position
+                        xt = xt + wt*t;
+    
+                        if(m_AABB_In_Out(xt,AABB_min,AABB_max))
+                        {
+                            break;
+                        }
+    
+                        //Volume sample
+                        m_sandbox_volume(xt,sigma_a,sigma_s,sigma_t,L_e,floating_majorant);
+                        majorant = 1.05; //floating_majorant[i];
+                        sigma_n[i] = majorant - sigma_t[i];
+    
+                        //Probabilities
+                        P_e = sigma_a[i]/majorant;
+                        P_s = sigma_s[i]/majorant;
+                        P_n = sigma_n[i]/majorant;
+    
+                        //New random number
+                        xi = nrandom();
+    
+                        //Determine next event
+                        if(xi < P_e)
+                        {
+                            L_s[i] = L_s[i] + (L_e[i] * (sigma_a[i]/majorant) * multiplier);
+                            break;
+                        }
+                        else if(xi < 1.0 - P_n)
+                        {
+                            depth++;
+                            w_temp = wt;
+                            wt = m_norm_HG_dir(nrandom(),g,wt);
+                            costheta = dotProduct(w_temp,wt);
+                            m_Anisotropic_Phase_BSDF(pdf,g,costheta);
+                            multiplier *= sigma_s[i]/majorant * pdf;
+                        }
+                    }
+    
+                    L[i] = L[i] + (L_s[i]*(1.0/realNumber(settings.magik_sandbox_monte_carlo_samples)));
                 }
             }
 
-
         //Mandelbulb
-        int m_sandbox_mandelbulb(const Vector3 &p, const int &imax)
+        int m_sandbox_mandelbulb(Vector3 &out, const Vector3 &p, const int &imax)
         {
-            realNumber x = p.x, y = p.y, z = p.z, xnew, ynew, znew, n = 4.0, r, theta, phi;
+            Matrix3 m = rotateRay(0.0,0.0,-90.0);
+            Vector3 x_rot = p;
+            x_rot = m*x_rot;
+            realNumber x = x_rot.x, y = x_rot.y, z = x_rot.z, xnew, ynew, znew, n = 4.0, r, theta, phi;
             int i;
             
             for(i = 0; i < imax; i++)
@@ -303,13 +195,14 @@ namespace vmec
                 theta = std::atan2(std::sqrt(x*x+y*y),z);
                 phi = std::atan2(y,x);
 
-                xnew = std::pow(r,n) * std::sin(theta*n) * std::cos(phi*n) + p.x;
-                ynew = std::pow(r,n) * std::sin(theta*n) * std::sin(phi*n) + p.y;
-                znew = std::pow(r,n) * cos(theta*n) + p.z;
+                xnew = std::pow(r,n) * std::sin(theta*n) * std::cos(phi*n) + x_rot.x;
+                ynew = std::pow(r,n) * std::sin(theta*n) * std::sin(phi*n) + x_rot.y;
+                znew = std::pow(r,n) * cos(theta*n) + x_rot.z;
 
                 if(xnew*xnew + ynew*ynew + znew*znew > imax)
                 {
                     return i;
+                    out.set(xnew,ynew,znew);
                 }
 
                 x = xnew;
@@ -318,6 +211,7 @@ namespace vmec
             }
 
             return imax;
+            out.set(xnew,ynew,znew);
         }
 
         //Point Light
@@ -337,11 +231,11 @@ namespace vmec
         {
             //Light Direction
             Vector3 
-                w_light(-0.8,-0.3,0.0),
+                w_light(-1.0,-1.0,-0.1),
                 col_light(1.0,1.0,1.0);
             
             realNumber
-                scale_light = 24.0;
+                scale_light = 512.0;
             
             w_light = w_light / VectorLength(w_light);
 
@@ -376,81 +270,70 @@ namespace vmec
         }
 
         //Sandbox Volume
-        void m_sandbox_volume(const Vector3 &x_k, Vector3 &sigma_a, Vector3 &sigma_s, Vector3 &sigma_t, Vector3 &L_e)
+        void m_sandbox_volume(const Vector3 &x_k, Vector3 &sigma_a, Vector3 &sigma_s, Vector3 &sigma_t, Vector3 &L_e, Vector3 &floating_majorant)
         {
-            int mandelbulb = m_sandbox_mandelbulb(x_k*0.15,8);
-            realNumber r = VectorLength(x_k);
-            Vector3 scatter,absorption;
+            //Vector3 m_out;
+            //int mandelbulb = m_sandbox_mandelbulb(m_out,x_k*0.15,8);
+            
+            //Blender Shader Copy
+            //Emissive spheres
+            Vector3
+                pos_blue(1.5,-2.2,-5.0),
+                pos_red(-6.0,5.22,0.0),
+                col_blue(0.0,0.0,1.0*1560000.0),
+                col_red(1560000.0,1560000.0,1560000.0);
 
-            //Handel Emissive Media
-            if(r < 18.0)
+            realNumber
+                r_blue = 2.0,
+                r_red = 2.0;
+
+            //Blue
+            if(euclidianDistance(pos_blue,x_k) <= r_blue)
             {
-                Vector3 emissionColor(1.0,1.0,1.0);
-                L_e = emissionColor*std::exp(-r*0.25)*0.0;
+                //L_e = col_blue;
             }
 
-            //Handel Absorption and Scattering
-            if(mandelbulb < 8)
+            //Red
+            if(euclidianDistance(pos_red,x_k) <= r_red)
             {
-                //Outside Mandelbulb
-                absorption.set(0.01,0.015,0.02);
-                scatter.set(0.015,0.02,0.025);
+                L_e = col_red;
+            }
+
+            //Density
+            Vector3
+                absorption(0.01,0.01,0.01),
+                scatter(0.05,0.05,0.05);
                 sigma_a = absorption;
                 sigma_s = scatter;
                 sigma_t = sigma_a + sigma_s;
-            }
-            else
+                floating_majorant = scatter;
+
+            realNumber
+                r_sphere = 5.0;
+
+            if(VectorLength(x_k) < r_sphere) //Mandelbulb !(mandelbulb < 8)
             {
-                //Inside Mandelbulb
-                absorption.set(0.2,0.3,0.4);
-                scatter.set(0.95,0.95,0.95);
+                absorption.set(0.01,0.01,0.01);
+                scatter.set(0.305,0.51,1.02);
                 sigma_a = absorption;
                 sigma_s = scatter;
                 sigma_t = sigma_a + sigma_s;
+                floating_majorant = scatter;
             }
-
-            /*realNumber j = 5.0;
-
-            absorption.set(0.1,0.2,0.3);
-            scatter.set(0.2,0.5,0.8);
-
-            if(r < j)
-            {
-                sigma_a = absorption * 1.0;
-                sigma_s = scatter * 9.0;
-                sigma_t = sigma_a + sigma_s;
-            }
-
-            if(r >= j)
-            {
-                realNumber scale = std::exp(-(r-j)*3.0);
-                sigma_a = absorption * scale;
-                sigma_s = scatter * scale;
-                sigma_t = sigma_a + sigma_s;
-            }*/
         }
-    
-    
+
+        //In-Out check
+        bool m_AABB_In_Out(const Vector3 &p0, const Vector3 &AABB_min, const Vector3 &AABB_max)
+        {
+            if(((p0.x > AABB_max.x) || (p0.y > AABB_max.y) || (p0.z > AABB_max.z)) || ((p0.x < AABB_min.x) || (p0.y < AABB_min.y) || (p0.z < AABB_min.z)))
+            {
+                return true; //Inisde
+            }
+
+            return false; //Outside
+        }
+
     //General Functions
-        //Mean Free Path Length
-        void m_Mean_Free_Path_dx(realNumber &dx, const Vector3& sigma_t, const realNumber& min_dx, const realNumber& max_dx)
-        {
-            realNumber MFP_dx = 1.0 / (VectorLength(sigma_t) + (2.0 * (nrandom()-0.5) * (max_dx/2.0)));
-
-            if(MFP_dx > max_dx)
-            {
-                dx = max_dx;
-            }
-            else if(MFP_dx < min_dx)
-            {
-                dx = min_dx;
-            }
-            else 
-            {
-                dx = MFP_dx;
-            }
-        }
-    
         //Isotropic Phase BSDF
         void m_Isotropic_Phase_BSDF(realNumber &pdf)
         {
@@ -458,21 +341,78 @@ namespace vmec
         }
 
         //Anisotropic Phase BSDF
-        void m_Anisotropic_Phase_BSDF(realNumber &pdf, const realNumber &g, const realNumber & costheta)
+        void m_Anisotropic_Phase_BSDF(realNumber &pdf, const realNumber &g, const realNumber &costheta)
         {
-            pdf = (1.0/(4.0*M_PI)) * ((1.0-g*g)/(std::pow(1.0+g*g-2.0*g*(costheta),3.0/2.0)));
+            pdf = (1.0/(4.0*M_PI)) * ((1.0-(g*g))/(std::pow(1.0+(g*g)-(2.0*g)*(costheta),3.0/2.0)));
+        }
+
+        //Drains Phase BSDF
+        void m_Drains_Phase_BSDF(realNumber &pdf, const realNumber &alpha, const realNumber& g, const realNumber &costheta)
+        {
+            realNumber pdf1;
+            m_Anisotropic_Phase_BSDF(pdf1,g,costheta);
+            pdf = (0.25/M_PI) * (pdf1) * ((1.0+alpha*(costheta*costheta))/(1+((alpha*(1.0+2.0*g*g))/3.0)));
+        }
+
+        //Mie scattering approximation
+        void m_Mie_Phase_BSDF(realNumber &pdf, const realNumber &d, const realNumber &costheta)
+        {
+            realNumber g_HG, g_D, alpha_D, w_D, Drains1, Drains2, d_scale;
+            d_scale = d/(1000000.0);
+            g_HG = std::exp(-(0.0990567/(d_scale-1.67154)));
+            g_D = std::exp(-(2.20679/(d_scale+3.91029))-0.428934);
+            alpha_D = std::exp(3.62489 - (8.29288/(d_scale+5.52825)));
+            w_D = std::exp(-(0.599085/(d_scale-0.641583))-0.665888);
+
+            m_Drains_Phase_BSDF(Drains1,0.0,g_HG,costheta);
+            m_Drains_Phase_BSDF(Drains2,alpha_D,g_D,costheta);
+            pdf = (1.0-w_D)*Drains1 + w_D*Drains2;
         }
 
         //Normalized random direction
-        //static Vector3 m_norm_rand_dir()
-        //{
+        Vector3 m_norm_rand_dir()
+        {
+            realNumber x,y,z,phi,proj;
+            Vector3 out;
+            
+            z = (nrandom()-0.5)*2.0;
+            phi = nrandom()*M_PI*2.0;
+            proj = std::sqrt(1.0-z*z);
+            x = proj*std::cos(phi);
+            y = proj*std::sin(phi);
 
-        //}
+            out.set(x,y,z);
+
+            return out;
+        }
+
+        //HG Importance Sampler
+        Vector3 m_norm_HG_dir(const realNumber &epsilon, const realNumber &g, const Vector3 &w0)
+        {
+            realNumber cosTheta, theta, phi, sphi;
+            Vector3 w1;
+            
+            cosTheta = (1.0/(2.0*g)) * ( 1+g*g - ( ((1-g*g)/(1-g+2*g*epsilon))*((1-g*g)/(1-g+2*g*epsilon)) ) );
+            theta = std::acos(cosTheta);
+            phi = nrandom()*2.0*M_PI;
+            sphi = std::sqrt(1.0-w0.y*w0.y);
+
+            w1.x = w0.x*cosTheta + ((std::sin(theta)*(w0.x*w0.y*std::cos(phi)-w0.z*std::sin(phi)))/sphi);
+            w1.z = w0.z*cosTheta + ((std::sin(theta)*(w0.z*w0.y*std::cos(phi)+w0.x*std::sin(phi)))/sphi);
+            w1.y = w0.y*cosTheta - sphi * std::cos(theta)*std::cos(phi);
+
+            w1 = w1 / VectorLength(w1);
+
+            return w1;
+        }
 }
+
 
 
 namespace Magik
 {
+    //Fonts; Accolade-Medium for MAGIK and Heebo for VMEC in general
+    
     //Main
         //Non Relativistic - All Sandbox
         void trivial(Vector4 &RGBA_out, const Vector3 &rayOrig, const Vector3 &rayDir)
@@ -483,15 +423,15 @@ namespace Magik
             AABBmin(-10.0,-10.0,-10.0),
             hit1(0.0,0.0,0.0),
             hit0(0.0,0.0,0.0),
-            backgroundCol(0.0,0.0,0.0);
+            backgroundCol(0.01,0.01,0.01);
     
             if(intersectAABB(rayOrig,rayDir,AABBmax,AABBmin,hit1,hit0))
-            {        
+            {
                 Vector3 L(0.0,0.0,0.0);
                 m_sandbox_trivial(L,hit0,hit1,0.1);
                 backgroundCol.set(backgroundCol.x + L.x , backgroundCol.y + L.y , backgroundCol.z + L.z);
             }
-        
+
             RGBA_out.set(backgroundCol.x,backgroundCol.y,backgroundCol.z,0.0);
         }
 
@@ -508,37 +448,37 @@ namespace Magik
             if(intersectAABB(rayOrig,rayDir,AABBmax,AABBmin,hit1,hit0))
             {        
                 Vector3 L(0.0,0.0,0.0);
-                m_sandbox_single(L,hit0,hit1,rayDir,0.1);
+                m_sandbox_single(L,hit0,hit1,rayDir);
                 backgroundCol.set(backgroundCol.x + L.x , backgroundCol.y + L.y , backgroundCol.z + L.z);
             }
         
             RGBA_out.set(backgroundCol.x,backgroundCol.y,backgroundCol.z,0.0);
         }
 
-        void single_MFP(Vector4 &RGBA_out, const Vector3 &rayOrig, const Vector3 &rayDir)
+        void multiple(Vector4 &RGBA_out, const Vector3 &rayOrig, const Vector3 &rayDir)
         {
-            //Do Single - Mean Free Path
+            //Do Multiple
             Vector3
             AABBmax(10.0,10.0,10.0),
             AABBmin(-10.0,-10.0,-10.0),
             hit1(0.0,0.0,0.0),
             hit0(0.0,0.0,0.0),
             backgroundCol(0.0,0.0,0.0);
+
+            realNumber
+            initial_majorant = 0.1;
     
             if(intersectAABB(rayOrig,rayDir,AABBmax,AABBmin,hit1,hit0))
             {        
                 Vector3 L(0.0,0.0,0.0);
-                //m_sandbox_estimate_transmittance(L,hit0,hit1,rayDir);
-                m_sandbox_single_MFP(L,hit0,hit1,rayDir);
+                for(int i = 0; i < settings.magik_sandbox_monte_carlo_samples; i++)
+                {
+                    m_sandbox_trace_null_collision_ray(L,hit0,rayDir,AABBmin,AABBmax,initial_majorant);
+                }
                 backgroundCol.set(backgroundCol.x + L.x , backgroundCol.y + L.y , backgroundCol.z + L.z);
             }
         
             RGBA_out.set(backgroundCol.x,backgroundCol.y,backgroundCol.z,0.0);
-        }
-
-        void multiple()
-        {
-            //Do Multiple
         }
 
 
@@ -546,11 +486,6 @@ namespace Magik
         void trivial_relativistic()
         {
             //Do Trivial but relativisitc
-        }
-
-        void single_relativistic()
-        {
-            //Do Single but relativisitc
         }
 
         void multiple_relativistic()

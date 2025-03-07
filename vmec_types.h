@@ -106,7 +106,23 @@ RayProperties operator/(const RayProperties& rp1, const realNumber& c);
 
 //Vectors and matrices
 struct Vector2 { realNumber x; realNumber y; };
-struct Vector3 { realNumber x; realNumber y; realNumber z; Vector3() : x(0), y(0), z(0) {} Vector3(realNumber x_val, realNumber y_val, realNumber z_val) : x(x_val), y(y_val), z(z_val) {} void set(realNumber x_val, realNumber y_val, realNumber z_val) {x = x_val; y = y_val; z = z_val;} };
+
+struct Vector3 
+{ 
+    realNumber x;
+    realNumber y;
+    realNumber z;
+    Vector3() : x(0), y(0), z(0) {} 
+    
+    Vector3(realNumber x_val, realNumber y_val, realNumber z_val) : x(x_val), y(y_val), z(z_val) {} 
+    
+    void set(realNumber x_val, realNumber y_val, realNumber z_val) {x = x_val; y = y_val; z = z_val;} 
+    
+    realNumber operator[](int i) const {switch (i) { case 0: return x; case 1: return y; case 2: return z; default: throw std::out_of_range("Illegal Index"); } }
+
+    realNumber& operator[](int i) {switch (i) { case 0: return x; case 1: return y; case 2: return z; default: throw std::out_of_range("Illegal Index"); } }
+};
+
 struct Vector4 { realNumber x; realNumber y; realNumber z; realNumber t; Vector4() : x(0), y(0), z(0), t(0) {} Vector4(realNumber x_val, realNumber y_val, realNumber z_val, realNumber t_val) : x(x_val), y(y_val), z(z_val), t(t_val) {} void set(realNumber x_val, realNumber y_val, realNumber z_val, realNumber t_val) {x = x_val; y = y_val; z = z_val; t = t_val;} };
 /*                 | M00  M01  M02 |
    Matrix layout:  | M10  M11  M12 |

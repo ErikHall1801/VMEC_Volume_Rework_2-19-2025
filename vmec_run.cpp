@@ -61,21 +61,21 @@ int main(int argc, char** argv) try
     sensorproperties.maxWidth = settings.image_width;
     sensorproperties.maxHeight = settings.image_height;
     sensorproperties.SensorSize = 35.0; //Physical sensor size in mm, here Super 35
-    sensorproperties.FocalLength = 24.0; //Camera FOV (focal length) in mm
+    sensorproperties.FocalLength = 70.0; //Camera FOV (focal length) in mm
     sensorproperties.FocalLength /= 1000.0; //Convert to m
-    sensorproperties.camPos.x = 0.005; //Cartesian camera position
-    sensorproperties.camPos.y = 0.5023;
-    sensorproperties.camPos.z = 24.23; 
+    sensorproperties.camPos.x = 0.005; //Cartesian camera position 0.005, 0.0023, 86.23
+    sensorproperties.camPos.y = 0.0023;
+    sensorproperties.camPos.z = 86.23; 
     sensorproperties.camMomentum.x = -0.0; //Read r, theta, phi COORDINATE velocity
-    sensorproperties.camMomentum.y = -0.0;
+    sensorproperties.camMomentum.y = 0.0002;
     sensorproperties.camMomentum.z = 0.0; 
-    sensorproperties.AngleX = -0.0123; //Pitch
+    sensorproperties.AngleX = -0.0123; //Pitch -0.0123, 0.064, 0.523
     sensorproperties.AngleY = 0.064; //Yaw
-    sensorproperties.AngleZ = 0.023; //Roll
+    sensorproperties.AngleZ = 0.823; //Roll
 
     //Camera Data for Free fall
     localProperties cameraProperties;
-    RayProperties pointProperties;
+    RayProperties pointProperties, lastProperties;
     Vector3 camPos(sensorproperties.camPos.x,sensorproperties.camPos.y,sensorproperties.camPos.z), camMomentum(sensorproperties.camMomentum.x,sensorproperties.camMomentum.y,sensorproperties.camMomentum.z), camDir;
 
     cameraProperties = initializeCamera(camPos,camMomentum);
@@ -109,7 +109,8 @@ int main(int argc, char** argv) try
     //Animation Loop
     vmec_log("Entering Main Program Loop");
     log_flush();
-    for(int frameNumber = 0; frameNumber < settings.number_of_frames; frameNumber++)
+    int frameNumber;
+    for(frameNumber = 0; frameNumber < settings.number_of_frames; frameNumber++)
     {
         log_flush();
         vmec_log("Starting frame: ", frameNumber);
@@ -118,12 +119,21 @@ int main(int argc, char** argv) try
             //F
         }
 
-        if(settings.animate_free_fall)
+        if(settings.animate_free_fall && !settings.static_camera)
         {
-            while(frameTimeStep*settings.time_ramp > hStepSum && !rs_hit)
+            //Advance time for the first frame even if animation is static
+            lastProperties = pointProperties;
+
+            while(frameTimeStep*settings.time_ramp > hStepSum && !rs_hit && !settings.static_camera)
             {
-                pointProperties.hStep = 1e-6*settings.time_ramp;
+                if(pointProperties.hStep > 1e-5) {pointProperties.hStep = 1e-5;}
                 pointProperties = rayRKF45(pointProperties);
+
+                if(isinf(pointProperties.hStep))
+                {
+                    pointProperties.hStep = 1e-6;
+                }
+
                 hStepSum += pointProperties.hStep;
 
                 if(pointProperties.r < settings.rs*settings.rs_scale*2.0)
@@ -131,6 +141,8 @@ int main(int argc, char** argv) try
                     rs_hit = true;
                 }
             }
+
+            vmec_log("hStep" , 1.0 / (hStepSum/settings.time_ramp));
 
             globalTime = pointProperties.t;
             XYZCam = BoyerLindquistToCartesian(pointProperties.r,pointProperties.theta,pointProperties.phi);
@@ -167,8 +179,6 @@ int main(int argc, char** argv) try
             write_exr_realNumber( pixels_raw, frameNumber/settings.frame_step );
         }
 
-        vmec_log("pointProperties.r: ", pointProperties.r);
-
         if(frameNumber >= settings.f_end)
         {
             break;
@@ -177,11 +187,6 @@ int main(int argc, char** argv) try
         hStepSum = 0.0;
         frameTime += frameTimeStep;
     }
-
-    /*Vector3 v0(1.435,0.0,0.0), v1(-1.7686,0.0,0.0);
-    realNumber check = 0.0;
-    magik_sandbox_march(v0,v1,0.1,check);
-    vmec_log("Check", check);*/
 
     vmec_log("End of animation loop");
     //Stop timing

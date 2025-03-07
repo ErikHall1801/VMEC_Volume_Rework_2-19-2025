@@ -19,7 +19,6 @@ realNumber euclidianDistance(const Vector3& v1, const Vector3& v2);
 realNumber euclidianDistance2(const Vector3& v1, const Vector3& v2);
 Vector3 rotate2D(const Vector3& rayOrig, const realNumber angle);
 Matrix3 rotateRay(const realNumber rX, const realNumber rY, const realNumber rZ);
-bool stepBetweenGeodesic(const int &max, const Vector3 &startPos, const Vector3 &dir, const Vector3 &targetPos, const realNumber &dx, const realNumber &minDist);
 
 //Metric Tensor Components
 realNumber metric_delta(const realNumber r);
@@ -45,6 +44,9 @@ realNumber radialChecker(const realNumber r, const realNumber phi, const realNum
 bool rayDiskIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &rayOrig, const Vector3 &rayDir, const realNumber &dx, Vector3 &hit);
 bool raySphereIntersection(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &pos, const realNumber &radius, const realNumber &dx);
 bool intersectAABB(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &max, const Vector3 &min, Vector3 &hitIn, Vector3 &hitOut);
+bool rayPlaneIntersection(const Vector3 &n, const Vector3 &p0, const Vector3 &rayOrig, const Vector3 &rayDir, const realNumber &dx, Vector3 &hit); 
+void axis_aligned_gird(const Vector3 &rayOrig, const Vector3 &hit, Vector3 &col, const realNumber &grid_spacing, bool &hit_grid);
+void XZ_world_gird(const Vector3 &rayOrig, const Vector3 &hit, Vector3 &col, bool &hit_grid);
 
 //Local initializations
 localProperties initializeCamera(const Vector3& camPos, const Vector3& camMomentum);
