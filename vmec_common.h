@@ -73,6 +73,7 @@ realNumber omega(realNumber r, realNumber theta, realNumber drdtau, realNumber d
 //Physical
 realNumber fauxTemperatureDistribution(realNumber T1, realNumber T2, realNumber r, realNumber r1, realNumber r2, realNumber N);
 Vector4 plancksLaw(realNumber T, realNumber RedshiftFactor);
+void camera_proper_to_globa_time(RayProperties &pointProperties, bool &rs_hit);
 
 //Volume
 Vector2 sampleWindDensity(realNumber r, const Vector3& WindBounds);

@@ -212,6 +212,31 @@ bool intersectAABB(const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 
 }
 
 
+//Camera proper time to global
+void camera_proper_to_globa_time(RayProperties &pointProperties, bool &rs_hit)
+{
+    realNumber hStepSum = 0.0;
+    
+    while(settings.frame_time_step*settings.time_ramp > hStepSum && !rs_hit)
+    {
+        if(pointProperties.hStep > 1e-5) {pointProperties.hStep = 1e-5;}
+        pointProperties = rayRKF45(pointProperties);
+    
+        if(isinf(pointProperties.hStep))
+        {
+            pointProperties.hStep = 1e-6;
+        }
+    
+        hStepSum += pointProperties.hStep;
+    
+        if(pointProperties.r < settings.rs*settings.rs_scale*2.0)
+        {
+            rs_hit = true;
+        }
+    }
+}
+
+
 //RNG
     static std::default_random_engine rng;
     realNumber nrandom()

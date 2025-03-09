@@ -260,7 +260,7 @@ static RayProperties interp_along_geodesic(realNumber target, const RayPropertie
 
 
 //Trace Geodesic
-static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumber* geodesic_k, localProperties &positionProperties, const Vector3 &rayOrig, const Vector3 &rayDir, const Vector3 &rayMomentum, bool &ray_convergence, bool &hit_disk, bool &hit_jet, bool &hit_ambient, int &i_rs, int &i_celestial_sphere, int &i_hit_disk, int &i_hit_jet, int &i_hit_ambient) 
+static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumber* geodesic_k, localProperties &positionProperties, const Vector3 &rayOrig, const Vector3 &rayDir, ray_scene_information &ray_scene_info, const Vector3 &rayMomentum) 
 {
     //Variable declaration
     bool 
@@ -305,17 +305,17 @@ static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumb
            
         if(pathProperties.r < settings.rs*settings.rs_scale) //Event Horizon
         {
-            i_rs = i;
+            ray_scene_info.i_rs = i;
             break_tag = true;
         }
         else if(pathProperties.r > settings.celestial_sphere_radius) //Celestial Sphere
         {
-            i_celestial_sphere = i;
+            ray_scene_info.i_celestial_sphere = i;
             break_tag = true;
         }
         else if(i+1 == settings.integration_depth) //Ray did not converge
         {
-            ray_convergence = false;
+            ray_scene_info.ray_convergence = false;
             break_tag = true;
         }
 
@@ -342,20 +342,23 @@ static void trace_geodesic(RayProperties* geodesic, int &geodesic_size, realNumb
             //In-bounding region check
             pointInBounds(BoundingVolumes,p1.x,p1.y);
 
-            if(BoundingVolumes.disk && !hit_disk)
+            if(BoundingVolumes.disk && !ray_scene_info.hit_disk)
             {
-                i_hit_disk = i;
-                hit_disk = true;
+                ray_scene_info.i_hit_disk = i;
+                ray_scene_info.hit_disk = true;
+                ray_scene_info.hit_disk_pos = BoyerLindquistToCartesian(p1.x,p1.y,p1.z);
             }
-            if(BoundingVolumes.jet && !hit_jet)
+            if(BoundingVolumes.jet && !ray_scene_info.hit_jet)
             {
-                i_hit_jet = i;
-                hit_jet = true;
+                ray_scene_info.i_hit_jet = i;
+                ray_scene_info.hit_jet = true;
+                ray_scene_info.hit_jet_pos = BoyerLindquistToCartesian(p1.x,p1.y,p1.z);
             }
-            if(BoundingVolumes.ambient && !hit_ambient)
+            if(BoundingVolumes.ambient && !ray_scene_info.hit_ambient)
             {
-                i_hit_ambient = i;
-                hit_ambient = true;
+                ray_scene_info.i_hit_ambient = i;
+                ray_scene_info.hit_ambient = true;
+                ray_scene_info.hit_ambient_pos = BoyerLindquistToCartesian(p1.x,p1.y,p1.z);
             }
         }
 
@@ -378,25 +381,26 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
     }
 
     //Precompute Geodesic
-        //Geodesic tags and bools
-        bool 
-            ray_convergence = true, 
-            hit_disk = false,
-            hit_jet = false,
-            hit_ambient = false;
-
-        int
-            i_rs = settings.integration_depth - 1,
-            i_celestial_sphere = settings.integration_depth - 1,
-            i_hit_disk = settings.integration_depth - 1,
-            i_hit_jet = settings.integration_depth - 1,
-            i_hit_ambient = settings.integration_depth - 1;
-
         localProperties
             camProperties;
 
-        //Compute Geodesic
-        trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
+        ray_scene_information 
+            ray_scene_info;
+            ray_scene_info.ray_convergence = true;
+            ray_scene_info.i_rs = settings.integration_depth - 1,
+            ray_scene_info.i_celestial_sphere = settings.integration_depth - 1,
+            ray_scene_info.i_hit_disk = settings.integration_depth - 1,
+            ray_scene_info.i_hit_jet = settings.integration_depth - 1,
+            ray_scene_info.i_hit_ambient = settings.integration_depth - 1,
+            ray_scene_info.hit_disk = false,
+            ray_scene_info.hit_jet = false,
+            ray_scene_info.hit_ambient = false,
+            ray_scene_info.hit_disk_pos.set(0.0,0.0,0.0),
+            ray_scene_info.hit_jet_pos.set(0.0,0.0,0.0),
+            ray_scene_info.hit_ambient_pos.set(0.0,0.0,0.0);
+
+    //Compute Geodesic
+        trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,ray_scene_info,camMomentum);
 
     //Debugger Variables
         bool 
@@ -405,8 +409,9 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             break_tag = false,
             is_obstical = false,
             is_EH = false,
-            hit_grid = false;
-    
+            hit_grid = false,
+            bv_grid_mask = false;
+
         int
             i = 0,
             hit_disk_ID = 0,
@@ -423,7 +428,8 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             geodesic_length = 0.0,
             k = 0.0,
             dk = 0.5,
-            travel_time_noise_check = 0.0;
+            travel_time_noise_check = 0.0,
+            Z_depth = 0.0;
 
         Vector3
             dir(rayDir.x,rayDir.y,rayDir.z),
@@ -439,16 +445,15 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             localVelocity(0.0,0.0,0.0),
             vortex_Noise_debug(0.0,0.0,0.0),
             hitDiskBL(0.0,0.0,0.0),
-            gird_col(0.0,0.0,0.0),
-            local_grid_size(5.0,5.0,5.0);
-    
+            gird_col(0.0,0.0,0.0);
+
         Vector4
             initialU(geodesic[0].u0,geodesic[0].u1,geodesic[0].u2,geodesic[0].u3), 
             RGBA_out(0.0,0.0,0.0,0.0);
 
         RayProperties
             rayProperties;
-        
+
         //Compute dir0
         dir0 = BoyerLindquistToCartesian(geodesic[1].r,geodesic[1].theta,geodesic[1].phi)-BoyerLindquistToCartesian(geodesic[0].r,geodesic[0].theta,geodesic[0].phi);
         dir0 = dir0/VectorLength(dir0);
@@ -461,7 +466,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             rayProperties = geodesic[i];
 
             //Event Horizon
-            if(i == i_rs && !break_tag)
+            if(i == ray_scene_info.i_rs && !break_tag)
             {
                 break_tag = true;
                 is_EH = true;
@@ -469,7 +474,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Celestial Sphere
-            if(i == i_celestial_sphere && !break_tag)
+            if(i == ray_scene_info.i_celestial_sphere && !break_tag)
             {
                 if(settings.colored_background)
                 {
@@ -482,7 +487,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Ray did not hit anything
-            if(!ray_convergence && !break_tag)
+            if(!ray_scene_info.ray_convergence && !break_tag)
             {
                 RGBA_out.set(1.0,0.0,1.0,0.0);
                 break_tag = true;
@@ -493,6 +498,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             if(rayDiskIntersection(checkerDiskNormal,checkerDiskp0,p0,dir,dx,hitDisk) && settings.checker_disk_toggle && !break_tag)
             {
                 k_intersect = geodesic_k[i-1] + euclidianDistance(p0,hitDisk);
+                Z_depth +=  euclidianDistance(p0,hitDisk);
                 
                 if(settings.checker_disk_Bi_sexual_color)
                 {
@@ -545,6 +551,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             p0 = p1;
             p1 = BoyerLindquistToCartesian(rayProperties.r,rayProperties.theta,rayProperties.phi);
             dx = euclidianDistance(p0,p1);
+            Z_depth += dx;
             dir = p1 - p0;
             dir = dir / VectorLength(dir);
         }
@@ -553,7 +560,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
     //Lattice Point test scene
     if(settings.lattice_scene)
     {
-        if(hit_jet)
+        if(ray_scene_info.hit_jet)
         {
             //Create Per ray copy of FRAME array
             initialize_per_RAY_lattice_points(num_lattice_points, RAY_jet_lattice_noise_points, FRAME_jet_lattice_noise_points);
@@ -569,7 +576,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             i = interp_idx+1;
 
             //Event Horizon
-            if(i >= i_rs && !break_tag)
+            if(i >= ray_scene_info.i_rs && !break_tag)
             {
                 break_tag = true;
                 is_EH = true;
@@ -577,7 +584,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Celestial Sphere
-            if(i >= i_celestial_sphere && !break_tag)
+            if(i >= ray_scene_info.i_celestial_sphere && !break_tag)
             {
                 if(settings.colored_background)
                 {
@@ -590,7 +597,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Ray did not hit anything
-            if(!ray_convergence && !break_tag)
+            if(!ray_scene_info.ray_convergence && !break_tag)
             {
                 RGBA_out.set(1.0,0.0,1.0,0.0);
                 break_tag = true;
@@ -598,7 +605,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Visualize Disk Points
-            if(settings.toggle_disk_lattice_points && hit_disk && i >= i_hit_disk && !break_tag)
+            if(settings.toggle_disk_lattice_points && ray_scene_info.hit_disk && i >= ray_scene_info.i_hit_disk && !break_tag)
             {
                 for(int g = 0; g < settings.disk_n_points; g++ && !hit_disk_lattice)
                 {
@@ -623,7 +630,7 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
             }
 
             //Visualize Jet Points
-            if(settings.toggle_jet_lattice_points && hit_jet && i >= i_hit_jet && !break_tag)
+            if(settings.toggle_jet_lattice_points && ray_scene_info.hit_jet && i >= ray_scene_info.i_hit_jet && !break_tag)
             {
                 for(int g = 0; g < settings.jet_n_points; g++)
                 {
@@ -711,20 +718,50 @@ static Vector4 vmec_debugger(const realNumber globalTime, const Vector3& rayOrig
         }
     }
 
+    //Grid Mask
+    if(sign(ray_scene_info.hit_disk_pos.y) != sign(camPos.y) && hit_grid) { bv_grid_mask = true; }
+
     //Visualize Bouding Volumes
-    if(hit_disk && settings.vis_disk_BV)
+    if(ray_scene_info.hit_disk && settings.vis_disk_BV && !bv_grid_mask)
     {
-        RGBA_out.x += 0.05;
+        if(settings.vis_disk_BV_hit)
+        {
+            RGBA_out.set(ray_scene_info.hit_disk_pos.x,ray_scene_info.hit_disk_pos.y,ray_scene_info.hit_disk_pos.z,0.0);
+        }
+        else
+        {
+            RGBA_out.x += 0.05;
+        }
     }
 
-    if(hit_jet && settings.vis_jet_BV)
+    if(ray_scene_info.hit_jet && settings.vis_jet_BV)
     {
-        RGBA_out.y += 0.05;
+        if(settings.vis_jet_BV_hit)
+        {
+            RGBA_out.set(ray_scene_info.hit_jet_pos.x,ray_scene_info.hit_jet_pos.y,ray_scene_info.hit_jet_pos.z,0.0);
+        }
+        else
+        {
+            RGBA_out.y += 0.05;
+        }
     }
 
-    if(hit_ambient && settings.vis_ambient_BV)
+    if(ray_scene_info.hit_ambient && settings.vis_ambient_BV)
     {
-        RGBA_out.z += 0.05;
+        if(settings.vis_ambient_BV_hit)
+        {
+            RGBA_out.set(ray_scene_info.hit_ambient_pos.x,ray_scene_info.hit_ambient_pos.y,ray_scene_info.hit_ambient_pos.z,0.0);
+        }
+        else
+        {
+            RGBA_out.z += 0.05;
+        }
+    }
+
+    //Depth
+    if(settings.Z_depth_overlay)
+    {
+        RGBA_out.set(Z_depth,Z_depth,Z_depth,0.0);
     }
 
     return RGBA_out;
@@ -807,7 +844,7 @@ static Vector4 output_geodesic(const realNumber &u, const realNumber &v, const S
         rayDir = M*rayDir;
 
         //I know this is bad but comon dude.
-        trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
+        //trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
     }
     else if(settings.geo_ex_ARBITRARY) //Initalization using arbitrary initial conditions
     {
@@ -819,7 +856,7 @@ static Vector4 output_geodesic(const realNumber &u, const realNumber &v, const S
         M = rotateRay(sensorproperties.AngleX, sensorproperties.AngleY, sensorproperties.AngleZ);
         rayDir = M*rayDir;
 
-        trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
+        //trace_geodesic(geodesic,geodesic_size,geodesic_k,camProperties,rayOrig,rayDir,camMomentum,ray_convergence,hit_disk,hit_jet,hit_ambient,i_rs,i_celestial_sphere,i_hit_disk,i_hit_jet,i_hit_ambient);
     }
 
     if(settings.geo_ex_export_interpolated)

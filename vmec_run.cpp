@@ -61,21 +61,21 @@ int main(int argc, char** argv) try
     sensorproperties.maxWidth = settings.image_width;
     sensorproperties.maxHeight = settings.image_height;
     sensorproperties.SensorSize = 35.0; //Physical sensor size in mm, here Super 35
-    sensorproperties.FocalLength = 70.0; //Camera FOV (focal length) in mm
+    sensorproperties.FocalLength = 24.0; //Camera FOV (focal length) in mm
     sensorproperties.FocalLength /= 1000.0; //Convert to m
-    sensorproperties.camPos.x = 0.005; //Cartesian camera position 0.005, 0.0023, 86.23
-    sensorproperties.camPos.y = 0.0023;
-    sensorproperties.camPos.z = 86.23; 
+    sensorproperties.camPos.x = 96.005; //Cartesian camera position 0.005, 0.0023, 86.23
+    sensorproperties.camPos.y = 72.0023;
+    sensorproperties.camPos.z = 256.23; 
     sensorproperties.camMomentum.x = -0.0; //Read r, theta, phi COORDINATE velocity
     sensorproperties.camMomentum.y = 0.0002;
     sensorproperties.camMomentum.z = 0.0; 
-    sensorproperties.AngleX = -0.0123; //Pitch -0.0123, 0.064, 0.523
-    sensorproperties.AngleY = 0.064; //Yaw
-    sensorproperties.AngleZ = 0.823; //Roll
+    sensorproperties.AngleX = -15.0123; //Pitch -0.0123, 0.064, 0.523
+    sensorproperties.AngleY = 18.064; //Yaw
+    sensorproperties.AngleZ = 2.223; //Roll
 
     //Camera Data for Free fall
     localProperties cameraProperties;
-    RayProperties pointProperties, lastProperties;
+    RayProperties pointProperties;
     Vector3 camPos(sensorproperties.camPos.x,sensorproperties.camPos.y,sensorproperties.camPos.z), camMomentum(sensorproperties.camMomentum.x,sensorproperties.camMomentum.y,sensorproperties.camMomentum.z), camDir;
 
     cameraProperties = initializeCamera(camPos,camMomentum);
@@ -99,11 +99,20 @@ int main(int argc, char** argv) try
 
     //Camera Animation variables
     Vector3 XYZCam;
-    realNumber hStepSum = 0.0, frameTime = 0.0, frameTimeStep = 1.0/realNumber(settings.frame_rate);
+    realNumber hStepSum = 0.0, frameTime = 0.0;
 
     //Time at infinity
     realNumber globalTime = 0.0;
     realNumber globalTimeOffset = 1000.0;
+    realNumber dt_local_to_global = 0.0;
+
+    //If Static, compute local rate of change of time
+    if(settings.static_camera)
+    {
+        camera_proper_to_globa_time(pointProperties,rs_hit);
+        dt_local_to_global = pointProperties.t;
+        vmec_log("Local dt", dt_local_to_global);
+    }
 
     try {
     //Animation Loop
@@ -121,29 +130,7 @@ int main(int argc, char** argv) try
 
         if(settings.animate_free_fall && !settings.static_camera)
         {
-            //Advance time for the first frame even if animation is static
-            lastProperties = pointProperties;
-
-            while(frameTimeStep*settings.time_ramp > hStepSum && !rs_hit && !settings.static_camera)
-            {
-                if(pointProperties.hStep > 1e-5) {pointProperties.hStep = 1e-5;}
-                pointProperties = rayRKF45(pointProperties);
-
-                if(isinf(pointProperties.hStep))
-                {
-                    pointProperties.hStep = 1e-6;
-                }
-
-                hStepSum += pointProperties.hStep;
-
-                if(pointProperties.r < settings.rs*settings.rs_scale*2.0)
-                {
-                    rs_hit = true;
-                }
-            }
-
-            vmec_log("hStep" , 1.0 / (hStepSum/settings.time_ramp));
-
+            camera_proper_to_globa_time(pointProperties,rs_hit);
             globalTime = pointProperties.t;
             XYZCam = BoyerLindquistToCartesian(pointProperties.r,pointProperties.theta,pointProperties.phi);
 
@@ -153,6 +140,10 @@ int main(int argc, char** argv) try
             sensorproperties.camMomentum.x = pointProperties.u1;
             sensorproperties.camMomentum.y = pointProperties.u2;
             sensorproperties.camMomentum.z = pointProperties.u3;
+        }
+        else if(settings.static_camera)
+        {
+            globalTime += dt_local_to_global;
         }
 
         if(rs_hit)
@@ -185,7 +176,7 @@ int main(int argc, char** argv) try
         }
 
         hStepSum = 0.0;
-        frameTime += frameTimeStep;
+        frameTime += settings.frame_time_step;
     }
 
     vmec_log("End of animation loop");

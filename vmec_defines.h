@@ -39,27 +39,29 @@ struct vmec_settings
     //Render target 
     u32 integration_depth = 156;
     u32 supersamples = 1;
-    u32 image_height = 250;  
-    u32 image_width = 500;
+    u32 image_height = 1000;  
+    u32 image_width = 1660;
 
     //animation
-    bool animate_free_fall = true;
-    bool animate_path = false; 
-    bool static_camera = false;
+    bool static_camera = true;
+    bool animate_free_fall = false;
+    bool animate_path = false;
     u32 frame_rate = 24; 
+    realNumber frame_time_step = 1.0/realNumber(frame_rate);
     u32 number_of_frames = 1;
     u32 f_start = 0; //animation start frame;
     u32 f_end = 1; //animation end frame;
     u32 frame_step = 1; //# frames between each frame;
     realNumber time_ramp = 240000.0_real;//scaling factor for time;
+    realNumber camera_proper_time = 1.0/frame_rate;
 
     //scene
     realNumber celestial_sphere_radius = 400.0_real;
 
     //render mode
-    bool render_debug = false;
+    bool render_debug = true;
     bool render_magik = false;
-    bool render_magik_sandbox = true;
+    bool render_magik_sandbox = false;
 
     // -- magik sandbox --
     //trivial
@@ -92,8 +94,9 @@ struct vmec_settings
     bool colored_background = false;
     bool integration_depth_overlay = false;
     bool coordinate_overlay = false;
+    bool Z_depth_overlay = false;
     bool world_grid = true; 
-    bool world_gird_gravitational_lensing = false; 
+    bool world_gird_gravitational_lensing = false;
     bool world_gird_ignore_shadow = false; //true = world-grid is drawn over the shadow, false = it is not
     realNumber grid_spacing_major = 20.0_real;
     realNumber grid_spacing_minor = 5.0_real;
@@ -116,8 +119,13 @@ struct vmec_settings
 
     //BV Visualization
     bool vis_disk_BV = false;
+    bool vis_disk_BV_hit = false;
+
     bool vis_jet_BV = false;
+    bool vis_jet_BV_hit = false;
+
     bool vis_ambient_BV = false;
+    bool vis_ambient_BV_hit = false;
 
     //Geodesic Export
     bool geodesic_export = false;

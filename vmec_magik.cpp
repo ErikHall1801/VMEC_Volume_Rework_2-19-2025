@@ -334,6 +334,12 @@ namespace vmec
         }
 
     //General Functions
+        //Unified Volume Function
+        void m_invoke_unified_volume(const Vector3 x_k, const BVObjects& BV, Vector3 &sigma_a, Vector3 &sigma_s, Vector3 &sigma_t, Vector3 &L_e)
+        {
+            
+        }
+
         //Isotropic Phase BSDF
         void m_Isotropic_Phase_BSDF(realNumber &pdf)
         {

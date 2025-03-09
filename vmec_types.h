@@ -123,6 +123,24 @@ struct Vector3
     realNumber& operator[](int i) {switch (i) { case 0: return x; case 1: return y; case 2: return z; default: throw std::out_of_range("Illegal Index"); } }
 };
 
+struct ray_scene_information {
+    bool ray_convergence;
+    int i_rs;
+    int i_celestial_sphere;
+    
+    bool hit_disk;
+    int i_hit_disk;
+    Vector3 hit_disk_pos;
+
+    bool hit_jet;
+    int i_hit_jet;
+    Vector3 hit_jet_pos;
+
+    bool hit_ambient;
+    int i_hit_ambient;
+    Vector3 hit_ambient_pos;
+};
+
 struct Vector4 { realNumber x; realNumber y; realNumber z; realNumber t; Vector4() : x(0), y(0), z(0), t(0) {} Vector4(realNumber x_val, realNumber y_val, realNumber z_val, realNumber t_val) : x(x_val), y(y_val), z(z_val), t(t_val) {} void set(realNumber x_val, realNumber y_val, realNumber z_val, realNumber t_val) {x = x_val; y = y_val; z = z_val; t = t_val;} };
 /*                 | M00  M01  M02 |
    Matrix layout:  | M10  M11  M12 |
